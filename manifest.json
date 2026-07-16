@@ -6,10 +6,10 @@
   "minimum_chrome_version": "116",
   "background": {
     "service_worker": "background.js",
+    "scripts": ["background.js"],
     "type": "module"
   },
   "permissions": [
-    "debugger",
     "tabs",
     "activeTab",
     "scripting",
@@ -19,6 +19,7 @@
     "webNavigation",
     "unlimitedStorage"
   ],
+  "optional_permissions": ["debugger"],
   "host_permissions": ["<all_urls>", "ws://localhost/*", "ws://127.0.0.1/*"],
   "content_scripts": [
     {

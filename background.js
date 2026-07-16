@@ -10,6 +10,8 @@ import {
 } from "./lib/storage.js";
 import { chrome } from "./lib/browser.js";
 
+console.log("[bridge] background module loading…");
+
 const rpc = new Rpc();
 const cdp = new CDP();
 const net = createNetApi(cdp);
@@ -101,23 +103,39 @@ chrome.webRequest.onBeforeRequest.addListener(
 let transport, cfg;
 
 async function start() {
+  console.log("[bridge] start() running");
   cfg = await loadConfig();
+  console.log("[bridge] config loaded:", JSON.stringify(cfg));
   transport = createTransport(cfg, (msg) => {
     if (!msg) return;
     if (msg.method === "pong" || msg.method === "ping") return;
     rpc.handle(msg, transport);
   }, (state) => {
+    console.log("[bridge] transport state:", JSON.stringify(state));
     if (state.connected) {
       transport.sendObj({ jsonrpc: "2.0", method: "agent.connected", params: { userAgent: navigator.userAgent, version: chrome.runtime.getManifest().version } });
-    } else {
-      // on disconnect: nothing; reconnect handled by ws transport
     }
   });
 
   cdp.on((ev) => net._onCDPEvent(ev, notifyCtx()));
 
   transport.connect();
+  console.log("[bridge] transport.connect() returned. ws url:", cfg.url);
 }
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || (msg.jsonrpc !== "2.0" && typeof msg.method !== "string")) return false;
+  const shim = { sendObj: (o) => { try { sendResponse(o); } catch (e) {} }, ready: true };
+  rpc.handle(msg, shim);
+  return true;
+});
+
+chrome.runtime.onInstalled.addListener(() => { try { chrome.runtime.openOptionsPage(); } catch (e) {} });
+if (chrome.action && chrome.action.onClicked) {
+  chrome.action.onClicked.addListener(() => { try { chrome.runtime.openOptionsPage(); } catch (e) {} });
+}
+
+start().catch((e) => console.error("[bridge] start() FAILED:", e && e.stack || e));
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || (msg.jsonrpc !== "2.0" && typeof msg.method !== "string")) return false;
