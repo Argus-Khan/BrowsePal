@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Browser Agent Bridge",
+  "version": "0.1.0",
+  "description": "Lets an external AI agent read and manipulate pages, network, cache, and storage the way Mozilla DevTools do. Speak to it over a local WebSocket (JSON-RPC 2.0).",
+  "minimum_chrome_version": "116",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "debugger",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage",
+    "cookies",
+    "webRequest",
+    "webNavigation",
+    "unlimitedStorage"
+  ],
+  "host_permissions": ["<all_urls>", "ws://localhost/*", "ws://127.0.0.1/*"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "options_ui": {
+    "page": "options.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "browser-agent@local",
+      "strict_min_version": "128.0"
+    }
+  },
+  "action": {
+    "default_title": "Browser Agent Bridge"
+  }
+}

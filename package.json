@@ -1,0 +1,13 @@
+{
+  "name": "browser-agent-bridge-examples",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Example WebSocket server (the AI agent side) for the Browser Agent Bridge extension.",
+  "scripts": {
+    "start": "node examples/agent-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
