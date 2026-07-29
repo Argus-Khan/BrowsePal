@@ -9,21 +9,28 @@ function getHostname(url) {
   try { return new URL(url).hostname; } catch (e) { return null; }
 }
 
+async function bg(method, params) {
+  const res = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ jsonrpc: "2.0", id: Date.now(), method, params }, resolve);
+  });
+  return (res && res.result) || res || {};
+}
+
 async function refresh() {
   try {
-    const res = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ jsonrpc: "2.0", id: Date.now(), method: "agent.config.get" }, resolve);
-    });
-    const config = (res && res.result) || res || {};
+    const config = await bg("agent.config.get");
     const disabled = !!config.disabled;
     const excluded = config.excludedUrls || [];
+
+    const pill = document.getElementById("statusPill");
+    pill.textContent = disabled ? "disabled" : "enabled";
+    pill.className = "pill " + (disabled ? "off" : "on");
+
+    document.getElementById("enabledToggle").checked = !disabled;
 
     const tab = await getCurrentTab();
     const host = tab ? getHostname(tab.url) : null;
     const isExcluded = host ? excluded.some((p) => host === p || host.endsWith("." + p)) : false;
-
-    document.getElementById("statusDot").className = "status-dot " + (disabled ? "disabled" : "enabled");
-    document.getElementById("enabledToggle").checked = !disabled;
 
     document.getElementById("excludeCurrent").style.display = host && !isExcluded ? "" : "none";
     document.getElementById("allowCurrent").style.display = host && isExcluded ? "" : "none";
@@ -69,10 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const tab = await getCurrentTab();
       const host = getHostname(tab?.url);
       if (!host) return;
-      const res = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ jsonrpc: "2.0", id: Date.now(), method: "agent.config.get" }, resolve);
-      });
-      const config = (res && res.result) || res || {};
+      const config = await bg("agent.config.get");
       const excluded = config.excludedUrls || [];
       if (excluded.includes(host)) return;
       const updated = [...excluded, host];
@@ -87,10 +91,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const tab = await getCurrentTab();
       const host = getHostname(tab?.url);
       if (!host) return;
-      const res = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ jsonrpc: "2.0", id: Date.now(), method: "agent.config.get" }, resolve);
-      });
-      const config = (res && res.result) || res || {};
+      const config = await bg("agent.config.get");
       const excluded = config.excludedUrls || [];
       const updated = excluded.filter((p) => host !== p && !host.endsWith("." + p));
       await chrome.storage.local.set({ excludedUrls: updated });
@@ -99,9 +100,15 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) { console.error(err); }
   });
 
-  document.getElementById("openOptions").addEventListener("click", (e) => {
-    e.preventDefault();
+  document.getElementById("openOptions").addEventListener("click", () => {
     chrome.runtime.openOptionsPage();
+  });
+
+  document.getElementById("openSite").addEventListener("click", async () => {
+    const tab = await getCurrentTab();
+    if (tab?.url && !tab.url.startsWith("chrome://") && !tab.url.startsWith("about:")) {
+      chrome.tabs.create({ url: tab.url });
+    }
   });
 
   refresh();
