@@ -1,10 +1,19 @@
-const DEFAULTS = { url: "ws://localhost:9222", token: "", autoReconnect: true };
+const DEFAULTS = { url: "ws://localhost:9222", token: "", autoReconnect: true, allowRead: true, allowInteract: true, excludedUrls: [] };
 
 function getStored() {
   return new Promise((resolve) => {
     chrome.storage.local.get(DEFAULTS, (cfg) => {
       if (chrome.runtime.lastError) resolve({ ...DEFAULTS });
       else resolve(cfg);
+    });
+  });
+}
+
+function bg(method, params) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ jsonrpc: "2.0", id: Date.now(), method, params }, (res) => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve(res && res.result !== undefined ? res.result : res);
     });
   });
 }
@@ -16,12 +25,16 @@ async function init() {
   $("url").value = cfg.url;
   $("token").value = cfg.token || "";
   $("autoReconnect").checked = !!cfg.autoReconnect;
+  $("allowRead").checked = cfg.allowRead !== false;
+  $("allowInteract").checked = cfg.allowInteract !== false;
+  $("excludedUrls").value = (cfg.excludedUrls || []).join("\n");
   initDebuggerUi();
+  initLogUi();
 }
 
 function initDebuggerUi() {
   const hasDebuggerApi = !!(typeof chrome !== "undefined" && chrome.debugger && typeof chrome.debugger.attach === "function");
-  if (!hasDebuggerApi) return; // Firefox / Safari — hide the section entirely.
+  if (!hasDebuggerApi) return;
   const section = $("debuggerSection");
   const status = $("debuggerStatus");
   section.hidden = false;
@@ -43,15 +56,60 @@ function initDebuggerUi() {
   });
 }
 
+function initLogUi() {
+  let logTimer;
+
+  function fmt(ts) {
+    const d = new Date(ts);
+    return d.toLocaleTimeString() + "." + String(d.getMilliseconds()).padStart(3, "0");
+  }
+
+  async function fetchLog() {
+    try {
+      const entries = await bg("agent.passiveLog", { limit: 100 });
+      const filter = ($("logFilter").value || "").toLowerCase();
+      const tbody = $("logBody");
+      const badge = $("logBadge");
+      badge.hidden = false;
+      badge.textContent = entries.length;
+      tbody.innerHTML = "";
+      let shown = 0;
+      for (const e of entries) {
+        if (filter && !e.url.toLowerCase().includes(filter) && !e.method.toLowerCase().includes(filter)) continue;
+        if (shown++ >= 50) break;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td class="nowrap">${fmt(e.ts || e.timeStamp)}</td><td>${esc(e.method)}</td><td>${esc(e.type)}</td><td class="url">${esc(e.url)}</td><td>${e.tabId ?? ""}</td>`;
+        tbody.appendChild(tr);
+      }
+      if (!shown) tbody.innerHTML = '<tr><td colspan="5" class="empty">No entries</td></tr>';
+    } catch (e) {
+      $("logBody").innerHTML = `<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  $("logFilter").addEventListener("input", fetchLog);
+  $("logRefresh").addEventListener("click", fetchLog);
+  $("logSection").addEventListener("toggle", () => {
+    if ($("logSection").open) { fetchLog(); logTimer = setInterval(fetchLog, 3000); }
+    else { clearInterval(logTimer); }
+  });
+}
+
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
 $("save").addEventListener("click", async () => {
+  const rawExcluded = $("excludedUrls").value.trim();
   const patch = {
     url: $("url").value.trim() || DEFAULTS.url,
     token: $("token").value.trim(),
     autoReconnect: $("autoReconnect").checked,
+    allowRead: $("allowRead").checked,
+    allowInteract: $("allowInteract").checked,
+    excludedUrls: rawExcluded ? rawExcluded.split("\n").map((s) => s.trim()).filter(Boolean) : [],
   };
   await new Promise((resolve) => chrome.storage.local.set(patch, resolve));
   chrome.runtime.sendMessage({ jsonrpc: "2.0", method: "agent.config.set", params: patch }, () => {
-    showStatus("Saved. The background will reconnect with the new settings.");
+    showStatus("Saved. Settings applied.");
   });
 });
 

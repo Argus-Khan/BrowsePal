@@ -43,6 +43,7 @@
     "extension_pages": "default-src 'self'; connect-src 'self' ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*;"
   },
   "action": {
-    "default_title": "Browser Agent Bridge"
+    "default_title": "Browser Agent Bridge",
+    "default_popup": "popup.html"
   }
 }

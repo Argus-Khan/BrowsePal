@@ -125,6 +125,22 @@
         el.click();
         return ok(true);
       }
+      case "clickByText": {
+        const selector = msg.selector || "*";
+        const text = msg.text;
+        if (!text) return err("text required");
+        const els = document.querySelectorAll(selector);
+        const el = Array.from(els).find((e) => (e.textContent || "").trim().includes(text));
+        if (!el) return err(`no element containing text: ${text}`);
+        el.focus();
+        const rect = el.getBoundingClientRect();
+        const x = rect.x + rect.width / 2;
+        const y = rect.y + rect.height / 2;
+        el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));
+        el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: x, clientY: y }));
+        el.click();
+        return ok(true);
+      }
       case "hover": {
         const el = document.querySelector(msg.selector);
         if (!el) return err("not found");

@@ -26,12 +26,59 @@ function bindByDot(obj, names, splitIdx = 1) {
   }]));
 }
 
-const PAGE_METHODS = ["page.eval","page.getOuterHTML","page.getText","page.querySelector","page.querySelectorAll","page.getValue","page.setValue","page.click","page.hover","page.focus","page.type","page.pressKey","page.scroll","page.scrollIntoView","page.waitFor","page.screenshot","page.navigate","page.reload","page.frames"];
+const PAGE_METHODS = ["page.eval","page.getOuterHTML","page.getText","page.querySelector","page.querySelectorAll","page.getValue","page.setValue","page.click","page.clickByText","page.hover","page.focus","page.type","page.pressKey","page.scroll","page.scrollIntoView","page.waitFor","page.screenshot","page.navigate","page.reload","page.frames"];
 const TABS_METHODS = ["tabs.list","tabs.active","tabs.create","tabs.close","tabs.activate"];
 const NET_METHODS  = ["net.enable","net.disable","net.getLog","net.getRequest","net.clear","net.throttle","net.setBlocked","net.addInterceptor","net.removeInterceptor"];
 
+const READ_METHODS = new Set(["page.getText","page.getOuterHTML","page.querySelector","page.querySelectorAll","page.getValue","page.screenshot","page.frames","page.eval"]);
+const INTERACT_METHODS = new Set(["page.click","page.clickByText","page.setValue","page.type","page.pressKey","page.scroll","page.scrollIntoView","page.waitFor","page.navigate","page.reload","page.hover","page.focus","page.eval"]);
+
+function isUrlExcluded(url, patterns) {
+  if (!patterns || !patterns.length || !url) return false;
+  try {
+    const u = new URL(url);
+    const host = u.hostname;
+    for (const p of patterns) {
+      if (!p) continue;
+      if (p.includes("/")) {
+        if (url.includes(p)) return true;
+      } else {
+        if (host === p || host.endsWith("." + p)) return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+async function checkPageAccess(method, params) {
+  if (READ_METHODS.has(method) && cfg.allowRead === false) {
+    throw new Error("access denied: reading page content is disabled");
+  }
+  if (INTERACT_METHODS.has(method) && cfg.allowInteract === false) {
+    throw new Error("access denied: interacting with pages is disabled");
+  }
+  if (params.tabId != null && cfg.excludedUrls && cfg.excludedUrls.length) {
+    const tab = await chrome.tabs.get(params.tabId);
+    if (tab && isUrlExcluded(tab.url, cfg.excludedUrls)) {
+      throw new Error(`access denied: ${tab.url} is excluded`);
+    }
+  }
+  if (method === "page.navigate" && params.url && cfg.excludedUrls && cfg.excludedUrls.length) {
+    if (isUrlExcluded(params.url, cfg.excludedUrls)) {
+      throw new Error(`access denied: ${params.url} is excluded`);
+    }
+  }
+}
+
+function withAccessCheck(method, handler) {
+  return async (params) => {
+    await checkPageAccess(method, params);
+    return handler(params);
+  };
+}
+
 function name2key(m) { return m.split(".")[1]; }
-const pageNs = Object.fromEntries(PAGE_METHODS.map((m) => [m, (p) => page[name2key(m)](p)]));
+const pageNs = Object.fromEntries(PAGE_METHODS.map((m) => [m, withAccessCheck(m, (p) => page[name2key(m)](p))]));
 const tabsNs = Object.fromEntries(TABS_METHODS.map((m) => [m, (p) => tabs[name2key(m)](p)]));
 const netNs  = Object.fromEntries(NET_METHODS.map((m) => [m, (p) => net[name2key(m)](p)]));
 
@@ -51,22 +98,30 @@ rpc.registerAll({
   ...cookiesNs,
   ...extStorageNs,
   "ping": () => ({ pong: Date.now(), connected: !!transport.ready }),
-  "agent.config.get": () => ({ url: cfg.url, hasToken: !!cfg.token, autoReconnect: cfg.autoReconnect }),
+  "agent.config.get": () => ({
+    url: cfg.url, hasToken: !!cfg.token, autoReconnect: cfg.autoReconnect,
+    allowRead: cfg.allowRead, allowInteract: cfg.allowInteract, excludedUrls: cfg.excludedUrls,
+    disabled: !!cfg.disabled,
+  }),
   "agent.config.set": async (p) => {
+    const allowed = ["url","token","autoReconnect","allowRead","allowInteract","excludedUrls","disabled"];
     const patch = {};
-    if (p.url) patch.url = p.url;
-    if (p.token !== undefined) patch.token = p.token;
-    if (p.autoReconnect !== undefined) patch.autoReconnect = !!p.autoReconnect;
+    for (const key of allowed) {
+      if (p[key] !== undefined) patch[key] = p[key];
+    }
+    if (patch.excludedUrls && !Array.isArray(patch.excludedUrls)) delete patch.excludedUrls;
     await saveConfig(patch);
     transport.reopen(patch);
     cfg = await loadConfig();
-    return { ok: true, url: cfg.url };
+    return { ok: true, ...cfg };
   },
   "agent.status": () => ({
     connected: !!transport.ready,
     url: cfg.url,
     attachedTabs: [...cdp.attached],
     passiveLogSize: passiveLog.length,
+    allowRead: cfg.allowRead, allowInteract: cfg.allowInteract,
+    excludedUrlsCount: (cfg.excludedUrls || []).length,
   }),
   "agent.reconnect": () => {
     if (transport) transport.connect();
@@ -104,7 +159,19 @@ chrome.webRequest.onBeforeRequest.addListener(
   { urls: ["<all_urls>"] },
 );
 
-let transport, cfg;
+let transport;
+let cfg = { url: "ws://127.0.0.1:9222", token: "", autoReconnect: true, allowRead: true, allowInteract: true, excludedUrls: [], disabled: false };
+
+const _rpcHandle = rpc.handle.bind(rpc);
+rpc.handle = (msg, transport) => {
+  if (cfg && cfg.disabled && msg && msg.method && !msg.method.startsWith("agent.") && msg.method !== "ping") {
+    if (msg.id != null) {
+      transport.sendObj({ jsonrpc: "2.0", id: msg.id, error: { code: -32000, message: "bridge disabled" } });
+    }
+    return;
+  }
+  return _rpcHandle(msg, transport);
+};
 
 async function start() {
   console.log("[bridge] start() running");
@@ -134,10 +201,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onInstalled.addListener(() => { try { chrome.runtime.openOptionsPage(); } catch (e) {} });
-if (chrome.action && chrome.action.onClicked) {
-  chrome.action.onClicked.addListener(() => { try { chrome.runtime.openOptionsPage(); } catch (e) {} });
-}
+// chrome.runtime.onInstalled intentionally omitted — the popup is the entry point.
 
 start().catch((e) => console.error("[bridge] start() FAILED:", e && e.stack || e));
 

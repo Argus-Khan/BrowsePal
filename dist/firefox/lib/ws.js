@@ -2,6 +2,10 @@ const DEFAULTS = {
   url: "ws://127.0.0.1:9222",
   token: "",
   autoReconnect: true,
+  allowRead: true,
+  allowInteract: true,
+  excludedUrls: [],
+  disabled: false,
 };
 
 export function loadConfig() {

@@ -10,6 +10,8 @@ const files = [
   "options.html",
   "options.js",
   "options.css",
+  "popup.html",
+  "popup.js",
 ];
 
 async function build() {

@@ -21,6 +21,23 @@
 
     <label class="row"><input id="autoReconnect" type="checkbox" checked /> Re-connect automatically</label>
 
+    <hr />
+
+    <h2>Access permissions</h2>
+    <p class="hint">Control what connected agents can do. Changes apply immediately.</p>
+
+    <label class="row"><input id="allowRead" type="checkbox" checked /> Allow reading page content</label>
+    <small class="indent">Page text, HTML, DOM queries, screenshots, frame access</small>
+
+    <label class="row"><input id="allowInteract" type="checkbox" checked /> Allow interacting with pages</label>
+    <small class="indent">Click, type, scroll, navigate, submit, press keys</small>
+
+    <label for="excludedUrls">Excluded URLs / patterns</label>
+    <textarea id="excludedUrls" rows="4" placeholder="mail.google.com&#10;*://banking.example.com/*&#10;accounts.example.com"></textarea>
+    <small>One per line. Agents cannot read or interact with matching pages. Partial hostname matches work (e.g. <code>google.com</code> blocks <code>mail.google.com</code>).</small>
+
+    <hr />
+
     <div id="debuggerSection" class="panel" hidden>
       <p><strong>CDP / Network debugging</strong> (Chromium only)</p>
       <p class="hint">Required for <code>net.*</code> methods such as request interception, throttling, and response-body capture.</p>
@@ -28,11 +45,32 @@
       <span id="debuggerStatus"></span>
     </div>
 
-    <button id="save">Save &amp; reconnect</button>
-    <button id="reconnect" class="ghost">Reconnect now</button>
-    <button id="status" class="ghost">Status</button>
+    <div class="actions">
+      <button id="save">Save</button>
+      <button id="reconnect" class="ghost">Reconnect now</button>
+      <button id="status" class="ghost">Status</button>
+    </div>
 
     <pre id="out" hidden></pre>
+
+    <hr />
+
+    <details id="logSection">
+      <summary>Activity log <span class="badge" id="logBadge" hidden>0</span></summary>
+      <p class="hint">Web requests the extension has observed. Refreshed automatically.</p>
+      <div class="log-controls">
+        <input id="logFilter" type="text" placeholder="Filter by URL or method…" />
+        <button id="logRefresh" class="ghost small">Refresh</button>
+      </div>
+      <div id="logContainer">
+        <table id="logTable">
+          <thead><tr><th>Time</th><th>Method</th><th>Type</th><th>URL</th><th>Tab</th></tr></thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+    </details>
+
+
   </main>
 
   <script src="options.js"></script>

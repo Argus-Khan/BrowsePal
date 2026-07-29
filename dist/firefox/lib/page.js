@@ -70,6 +70,7 @@ export function createPageApi() {
     getValue: wrapSimple("getValue"),
     setValue: wrapSimple("setValue"),
     click: wrapSimple("click"),
+    clickByText: wrapSimple("clickByText"),
     hover: wrapSimple("hover"),
     focus: wrapSimple("focus"),
     type: wrapSimple("type"),
