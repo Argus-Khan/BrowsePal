@@ -26,7 +26,7 @@ function bindByDot(obj, names, splitIdx = 1) {
   }]));
 }
 
-const PAGE_METHODS = ["page.eval","page.getOuterHTML","page.getText","page.querySelector","page.querySelectorAll","page.getValue","page.setValue","page.click","page.hover","page.focus","page.type","page.scroll","page.scrollIntoView","page.waitFor","page.screenshot","page.navigate","page.reload","page.frames"];
+const PAGE_METHODS = ["page.eval","page.getOuterHTML","page.getText","page.querySelector","page.querySelectorAll","page.getValue","page.setValue","page.click","page.clickByText","page.hover","page.focus","page.type","page.pressKey","page.scroll","page.scrollIntoView","page.waitFor","page.screenshot","page.navigate","page.reload","page.frames"];
 const TABS_METHODS = ["tabs.list","tabs.active","tabs.create","tabs.close","tabs.activate"];
 const NET_METHODS  = ["net.enable","net.disable","net.getLog","net.getRequest","net.clear","net.throttle","net.setBlocked","net.addInterceptor","net.removeInterceptor"];
 
@@ -68,6 +68,10 @@ rpc.registerAll({
     attachedTabs: [...cdp.attached],
     passiveLogSize: passiveLog.length,
   }),
+  "agent.reconnect": () => {
+    if (transport) transport.connect();
+    return { connected: !!transport.ready, url: cfg.url };
+  },
   "agent.detachAll": async () => { await cdp.detachAll(); return { ok: true }; },
   "agent.passiveLog": (p) => {
     const limit = (p && p.limit) || 200;
@@ -137,16 +141,9 @@ if (chrome.action && chrome.action.onClicked) {
 
 start().catch((e) => console.error("[bridge] start() FAILED:", e && e.stack || e));
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg || (msg.jsonrpc !== "2.0" && typeof msg.method !== "string")) return false;
-  const shim = { sendObj: (o) => { try { sendResponse(o); } catch (e) {} }, ready: true };
-  rpc.handle(msg, shim);
-  return true;
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "ws-reconnect" && transport) {
+    console.log("[bridge] alarm fired, reconnecting");
+    transport.connect();
+  }
 });
-
-chrome.runtime.onInstalled.addListener(() => { try { chrome.runtime.openOptionsPage(); } catch (e) {} });
-if (chrome.action && chrome.action.onClicked) {
-  chrome.action.onClicked.addListener(() => { try { chrome.runtime.openOptionsPage(); } catch (e) {} });
-}
-
-start();

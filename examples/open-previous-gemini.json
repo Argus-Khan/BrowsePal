@@ -1,0 +1,9 @@
+[
+  { "action": "findTab", "urlPattern": "gemini\\.google\\.com", "saveAs": "tabId" },
+  { "action": "goto", "url": "https://gemini.google.com/app", "tabId": "${tabId}" },
+  { "action": "sleep", "ms": 3000 },
+  { "action": "find", "selector": "a.gem-nav-list-item[href^='/app/']", "tabId": "${tabId}", "limit": 5, "attrs": ["href"], "saveAs": "convos" },
+  { "action": "goto", "url": "https://gemini.google.com${convos[1].attrs.href}", "tabId": "${tabId}" },
+  { "action": "sleep", "ms": 3000 },
+  { "action": "read", "tabId": "${tabId}", "saveAs": "text" }
+]

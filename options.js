@@ -16,6 +16,31 @@ async function init() {
   $("url").value = cfg.url;
   $("token").value = cfg.token || "";
   $("autoReconnect").checked = !!cfg.autoReconnect;
+  initDebuggerUi();
+}
+
+function initDebuggerUi() {
+  const hasDebuggerApi = !!(typeof chrome !== "undefined" && chrome.debugger && typeof chrome.debugger.attach === "function");
+  if (!hasDebuggerApi) return; // Firefox / Safari — hide the section entirely.
+  const section = $("debuggerSection");
+  const status = $("debuggerStatus");
+  section.hidden = false;
+
+  function refresh() {
+    if (!chrome.permissions) { status.textContent = "granted"; return; }
+    chrome.permissions.contains({ permissions: ["debugger"] }, (ok) => {
+      status.textContent = ok ? "granted" : "not granted";
+    });
+  }
+  refresh();
+
+  $("grantDebugger").addEventListener("click", () => {
+    if (!chrome.permissions) { showStatus("debugger permission cannot be requested on this browser."); return; }
+    chrome.permissions.request({ permissions: ["debugger"] }, (granted) => {
+      refresh();
+      showStatus(granted ? "debugger permission granted." : "debugger permission was denied.");
+    });
+  });
 }
 
 $("save").addEventListener("click", async () => {
@@ -27,6 +52,17 @@ $("save").addEventListener("click", async () => {
   await new Promise((resolve) => chrome.storage.local.set(patch, resolve));
   chrome.runtime.sendMessage({ jsonrpc: "2.0", method: "agent.config.set", params: patch }, () => {
     showStatus("Saved. The background will reconnect with the new settings.");
+  });
+});
+
+$("reconnect").addEventListener("click", async () => {
+  showStatus("reconnecting…");
+  chrome.runtime.sendMessage({ jsonrpc: "2.0", id: Date.now(), method: "agent.reconnect" }, (res) => {
+    if (chrome.runtime.lastError || !res) {
+      showStatus("Could not reach background: " + (chrome.runtime.lastError?.message || "no response"));
+      return;
+    }
+    showStatus(JSON.stringify(res.result || res, null, 2));
   });
 });
 

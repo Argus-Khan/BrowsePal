@@ -1,0 +1,6 @@
+[
+  { "action": "goto", "url": "https://example.com", "newTab": true },
+  { "action": "wait", "selector": "h1", "timeoutMs": 10000 },
+  { "action": "read", "selector": "body" },
+  { "action": "screenshot" }
+]

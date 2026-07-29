@@ -1,0 +1,66 @@
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --ink: #e6edf3;
+  --muted: #8b97a4;
+  --accent: #2f81f7;
+  --border: #30363d;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-width: 420px;
+  max-width: 640px;
+  padding: 24px;
+}
+header h1 { margin: 0 0 4px; font-size: 20px; }
+.lead { margin: 0 0 24px; color: var(--muted); }
+main { display: flex; flex-direction: column; gap: 6px; }
+label { font-weight: 600; margin-top: 12px; }
+input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+}
+small { color: var(--muted); margin-bottom: 4px; display: block; }
+.row { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+button {
+  margin-top: 16px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+button.ghost { background: transparent; border: 1px solid var(--border); color: var(--ink); }
+button.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--ink); margin-top: 0; }
+.panel {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.panel p { margin: 0 0 8px; }
+.panel .hint { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.panel code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 4px; }
+#debuggerStatus { margin-left: 10px; font-size: 13px; color: var(--muted); }
+#out {
+  margin-top: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}

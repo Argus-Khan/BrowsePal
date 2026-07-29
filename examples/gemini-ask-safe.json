@@ -1,0 +1,10 @@
+[
+  { "action": "findTab", "urlPattern": "gemini\\.google\\.com", "saveAs": "tabId" },
+  { "action": "sleep", "ms": 2000 },
+  { "action": "wait", "selector": "[aria-label='Enter a prompt for Gemini']", "timeoutMs": 15000, "tabId": "${tabId}" },
+  { "action": "type", "selector": "[aria-label='Enter a prompt for Gemini']", "text": "Which AI agents are safer to use in the browser?", "tabId": "${tabId}" },
+  { "action": "sleep", "ms": 1000 },
+  { "action": "click", "selector": "[aria-label='Send message']", "tabId": "${tabId}" },
+  { "action": "sleep", "ms": 20000 },
+  { "action": "read", "tabId": "${tabId}", "saveAs": "response" }
+]

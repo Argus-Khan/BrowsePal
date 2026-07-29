@@ -17,7 +17,8 @@
     "cookies",
     "webRequest",
     "webNavigation",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "alarms"
   ],
   "optional_permissions": ["debugger"],
   "host_permissions": ["<all_urls>", "ws://localhost/*", "ws://127.0.0.1/*"],
@@ -37,6 +38,9 @@
       "id": "browser-agent@local",
       "strict_min_version": "128.0"
     }
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; connect-src 'self' ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*;"
   },
   "action": {
     "default_title": "Browser Agent Bridge"

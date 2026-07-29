@@ -90,14 +90,54 @@
       case "setValue": {
         const el = document.querySelector(msg.selector);
         if (!el) return err("not found");
-        el.value = msg.value;
+        if (el.isContentEditable) {
+          el.focus();
+          const sel = window.getSelection();
+          sel.selectAllChildren(el);
+          document.execCommand("insertText", false, msg.value);
+        } else {
+          el.value = msg.value;
+        }
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
+        return ok(true);
+      }
+      case "pressKey": {
+        const target = msg.selector ? document.querySelector(msg.selector) : document.activeElement;
+        if (!target) return err("no target");
+        target.focus();
+        const key = msg.key || "Enter";
+        const code = msg.code || (key === "Enter" ? "Enter" : key);
+        target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key, code }));
+        target.dispatchEvent(new KeyboardEvent("keypress", { bubbles: true, key, code }));
+        target.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key, code }));
         return ok(true);
       }
       case "click": {
         const el = document.querySelector(msg.selector);
         if (!el) return err("not found");
+        el.focus();
+        const rect = el.getBoundingClientRect();
+        const x = rect.x + rect.width / 2;
+        const y = rect.y + rect.height / 2;
+        el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));
+        el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: x, clientY: y }));
+        el.click();
+        return ok(true);
+      }
+      case "clickByText": {
+        const selector = msg.selector || "*";
+        const text = msg.text;
+        if (!text) return err("text required");
+        const els = document.querySelectorAll(selector);
+        const el = Array.from(els).find((e) => (e.textContent || "").trim().includes(text));
+        if (!el) return err(`no element containing text: ${text}`);
+        el.focus();
+        const rect = el.getBoundingClientRect();
+        const x = rect.x + rect.width / 2;
+        const y = rect.y + rect.height / 2;
+        el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));
+        el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: x, clientY: y }));
         el.click();
         return ok(true);
       }

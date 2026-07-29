@@ -30,17 +30,44 @@ content.js (per page, all frames) ── DOM/eval/local/session/Cache/IndexedDB
 
 ## Install
 
-1. `chrome://extensions` → enable **Developer mode** → **Load unpacked** → pick this folder.
-   Firefox: `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → pick `manifest.json`.
-2. Click the extension's **Options** page to set the WebSocket URL (default `ws://localhost:9222`) and an optional shared token (sent as the WebSocket subprotocol for light auth).
+### From source (development)
+
+1. Load the extension:
+   - **Chrome / Chromium:** `chrome://extensions` → enable **Developer mode** → **Load unpacked** → pick `dist/chrome/`.
+   - **Firefox:** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…** → pick `dist/firefox/manifest.json`.
+2. Click the extension's **Options** page to set the WebSocket URL (default `ws://localhost:9222`) and an optional shared token.
+   - **Chrome only:** click **Grant debugger (CDP) permission** for `net.*` features.
 3. Run the agent side:
 
 ```bash
 npm install
-node examples/agent-server.js        # default ws://localhost:9222
-# with light auth:
-node examples/agent-server.js --token s3cr3t
+npm start                              # interactive REPL server
+npm run tools examples/list-tabs.json  # run a toolkit task
 ```
+
+### From npm (for friends / end users)
+
+```bash
+npm install -g browser-agent-tools
+browser-agent-tools examples/list-tabs.json
+```
+
+Then load the extension from the installed package:
+
+- Chrome: load unpacked from `node_modules/browser-agent-tools/dist/chrome/`
+- Firefox: load temporary add-on, pick `node_modules/browser-agent-tools/dist/firefox/manifest.json`
+
+### Build distribution folders
+
+```bash
+npm run build   # creates dist/chrome/ and dist/firefox/
+```
+
+### Publish to stores (optional)
+
+- **Chrome Web Store:** zip `dist/chrome/` and upload to the Chrome Web Store Developer Dashboard.
+- **Firefox Add-ons:** submit `dist/firefox/` as a source zip or packaged extension via [addons.mozilla.org](https://addons.mozilla.org). Stable Firefox requires signed extensions; use Firefox Developer Edition/Nightly for temporary testing.
+- **npm:** `npm publish` ships the toolkit and pre-built extension folders.
 
 The extension auto-connects (visible in the agent server's console) and retries with exponential backoff.
 
@@ -142,7 +169,7 @@ indexedDB.getAll     {tabId, db, store, query?, limit?}
 
 | Permission | Reason |
 |---|---|
-| `debugger` | Full CDP-level network + JS-in-frame (the user explicitly asked for full DevTools power). Shows an "is being controlled by automated software" bar — expected. |
+| `debugger` (optional, Chrome/Chromium only) | Full CDP-level network + JS-in-frame. Shows an "is being controlled by automated software" bar — expected. Requested from the options page at runtime because Firefox does not have this permission/API. |
 | `tabs`, `activeTab`, `scripting` | Enumerate/tab-focus and inject content side helpers. |
 | `webRequest`, `webNavigation` | Passive traffic log + frame enumeration. |
 | `storage` | `chrome.storage` commands + extension settings. |

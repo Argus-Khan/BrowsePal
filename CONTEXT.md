@@ -35,23 +35,26 @@ examples/probe.js ── automated probe (serve, wait for connection, run RPC ca
 | `page.* / tabs.* / storage.* / cache.* / indexedDB.* / cookies.*` | ✅ | ✅ |
 | Passive `webRequest` log + block | ✅ | ✅ |
 | `net.*` CDP (bodies, throttle, intercept/mock) | ✅ via `chrome.debugger` | ❌ — Firefox has no `chrome.debugger`. `lib/cdp.js` now guards and returns a clean error (`code: -32010`). |
-| `debugger` permission | Required (we have it) | **Not a valid permission** — moved to `optional_permissions` so Firefox stops warning; only requested at runtime on Chromium. |
+| `debugger` permission | Optional; requested at runtime via the options page. `manifest.json` declares it. | **Not a valid permission** — Firefox uses `firefox/manifest.json` (no `debugger`). `net.*` CDP commands are unavailable. |
 
 ## Processing state
 
-The addon was working on Chrome MV3. It now **loads cleanly on Firefox** after fixing:
-1. `background.service_worker is currently disabled` → added `scripts: ["background.js"]` alongside `service_worker`.
-2. Manifest permission error `Value "debugger" must either…` → moved `debugger` to `optional_permissions`.
-3. `lib/cdp.js` now exposes `cdp.available = !!chrome.debugger` and `attach()` throws a clear `code: -32010` error when unavailable, so Firefox doesn't throw `TypeError`s trying to use `chrome.debugger` at load.
-4. Background + `lib/ws.js` added console logs at each stage of `start()` and `connect()` to help debug connection failures.
+The addon works on Chrome MV3. It now loads cleanly on Firefox using `firefox/manifest.json`.
+1. `background.service_worker is currently disabled` on Firefox → `firefox/manifest.json` uses `scripts: ["background.js"]`. The `firefox/` directory contains a standalone copy of the extension with the Firefox-compatible manifest.
+2. Manifest permission error `Value "debugger" must either…` on Firefox → split manifests:
+   - `manifest.json` (Chrome): declares `"debugger"` in `optional_permissions`.
+   - `firefox/manifest.json` (Firefox): omits `debugger` entirely.
+3. `lib/cdp.js` now exposes `hasPermission()` / `requestPermission()` helpers and `attach()` throws clear errors (`code: -32010` when API unavailable, `code: -32011` when permission not granted).
+4. `options.html`/`options.js` show a Chromium-only "Grant debugger (CDP) permission" button that requests the permission at runtime.
+5. Background + `lib/ws.js` use `delayInMinutes` instead of Chrome-only `delayInMs` for reconnect alarms.
+6. `lib/net.js` `setBlocked()` fixed to treat string patterns as strings, not objects with a `.match` method.
 
 ## Pending / planned
-- **Retry connection on Firefox** in the user's live session — last probe ran to timeout with no incoming WS connection. We added instrumentation logs and are waiting for the user to **Remove → re-Load** the temporary add-on in `about:debugging` so the new manifest + logging take effect. The console in the background page's DevTools (`about:debugging → Browser Agent Bridge → Inspect`) should now print `[bridge]` lines showing exactly where startup halts (if it still does).
 - **Firefox net layer (proposed but not yet built):** a `lib/net-firefox.js` using blocking `webRequest` (`onBeforeRequest`, `onHeadersReceived`, `onBeforeSendHeaders`) so `net.setBlocked`, request-side `net.addInterceptor`, and `net.throttle` work on Firefox without CDP. Response body capture stays unavailable on Firefox (no API). The `net.js` dispatcher should route to the Firefox layer when `cdp.available === false`.
-- No linter/test harness is configured for this project. The work-in-progress unit/e2e checks under `/tmp/opencode/` (RPC dispatcher + example server round-trip) all pass when run from `/home/argus/Projects/browser-agent`.
+- No linter/test harness is configured for this project. All JS files pass `node --check`; both manifests are valid JSON.
 
 ## Verify / run
-- Chrome: load unpacked at `chrome://extensions`.
-- Firefox: `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…** → pick `manifest.json`. Stable Firefox refuses unsigned extensions; use Dev Edition/Nightly/Unbranded ESR or AMO sign.
+- Chrome: load unpacked at `chrome://extensions` (uses `manifest.json`).
+- Firefox: `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…** → pick **`firefox/manifest.json`**. Stable Firefox refuses unsigned extensions; use Dev Edition/Nightly/Unbranded ESR or AMO sign.
 - Agent side: `npm install` then `node examples/agent-server.js` (REPL: `ping`, `tabs.list`, `page.eval {"code":"document.title"}`). Or `node examples/probe.js` for an automated read of status/tabs/page/storage — exits after 100s if no connection.
 - All JS passes `node --check`. Manifest is valid JSON.
