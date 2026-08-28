@@ -1,18 +1,16 @@
 {
   "name": "browser-agent-tools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Standard toolkit and example agent server for the Browser Agent Bridge extension.",
-  "main": "examples/agent-tools.mjs",
+  "description": "AI-agent-optimized browser bridge with page snapshots, action plans, and reactive subscriptions.",
+  "main": "lib/client.mjs",
   "bin": {
     "browser-agent-tools": "examples/agent-tools.mjs",
-    "bab-tools": "examples/agent-tools.mjs"
+    "bab-tools": "examples/agent-tools.mjs",
+    "bab-server": "lib/server.js"
   },
   "files": [
-    "examples/agent-tools.mjs",
-    "examples/agent-server.js",
-    "examples/*.json",
-    "README.md",
+    "lib/",
     "manifest.json",
     "manifest-firefox.json",
     "background.js",
@@ -22,11 +20,12 @@
     "options.css",
     "popup.html",
     "popup.js",
-    "lib/",
+    "examples/",
     "dist/"
   ],
   "scripts": {
-    "start": "node examples/agent-server.js",
+    "start": "node lib/server.js",
+    "server": "node lib/server.js",
     "tools": "node examples/agent-tools.mjs",
     "build": "node scripts/build-dist.js",
     "prepublishOnly": "npm run build"
@@ -36,7 +35,9 @@
     "ai-agent",
     "webextension",
     "json-rpc",
-    "websocket"
+    "websocket",
+    "accessibility-tree",
+    "action-plans"
   ],
   "author": "",
   "license": "MIT",
