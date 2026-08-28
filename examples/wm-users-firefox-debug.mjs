@@ -1,40 +1,7 @@
-import WebSocket from "ws";
+import { connect, sleep } from "../lib/client.mjs";
 
 const PORT = Number(process.env.BRIDGE_PORT || 9222);
-const ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
-let id = 1;
-const pending = new Map();
-
-function rpc(method, params = {}, timeoutMs = 45000) {
-  const reqId = id++;
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { pending.delete(reqId); reject(new Error(`timeout: ${method}`)); }, timeoutMs);
-    pending.set(reqId, { resolve, reject, timer });
-    ws.send(JSON.stringify({ jsonrpc: "2.0", id: reqId, method, params }));
-  });
-}
-
-ws.on("message", (data) => {
-  try {
-    const msg = JSON.parse(data.toString());
-    if (msg.method === "agent.connected") {
-      console.log("NOTIFY agent.connected", msg.params?.userAgent || msg.params?.ua || "");
-    }
-    if (msg.id != null && pending.has(msg.id)) {
-      const { resolve, reject, timer } = pending.get(msg.id);
-      clearTimeout(timer);
-      pending.delete(msg.id);
-      if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-      else resolve(msg.result);
-    }
-  } catch {}
-});
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-await new Promise((resolve, reject) => { ws.on("open", resolve); ws.on("error", reject); });
+const { rpc, close } = await connect(PORT);
 
 async function waitForBridge(maxMs = 30000) {
   const start = Date.now();
@@ -58,7 +25,7 @@ async function probeBrowser() {
 console.log(`Waiting for bridge on ${PORT}...`);
 if (!(await waitForBridge())) {
   console.error("No bridge connected");
-  ws.close();
+  close();
   process.exit(1);
 }
 
@@ -126,4 +93,4 @@ try {
   console.log("SCREENSHOT_ERR", e.message);
 }
 
-ws.close();
+close();

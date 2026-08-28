@@ -35,8 +35,10 @@ Before a release, make sure there are no stale test files or temporary scripts i
 
 Files to keep:
 - `manifest.json`, `manifest-firefox.json`
-- `background.js`, `content.js`, `options.html`, `options.js`, `options.css`
-- `lib/`
+- `background.js`, `content.js`
+- `options.html`, `options.js`, `options.css`
+- `popup.html`, `popup.js`
+- `lib/` (includes `defaults.js`, `esc.js`, `client.mjs`, and other shared modules)
 - `examples/agent-tools.mjs`, `examples/agent-server.js`, `examples/*.json`
 - `scripts/build-dist.js`
 - `README.md`, `CONTEXT.md`, `AGENTS.md`
@@ -295,8 +297,10 @@ npm install -g browser-agent-tools
 
 ### Update skills
 
-If you change the toolkit actions or protocol, update:
-- `.opencode/skills/browser-bridge/SKILL.md`
+If you change the toolkit actions or protocol, update the canonical reference:
+- `.opencode/skills/browser-bridge/SKILL.md` (primary — most detailed)
+
+Then update the tool-specific wrappers to reference it:
 - `.opencode/agent/browser-agent.md`
 - `skills/browser-bridge/SKILL.md`
 - `skills/claude-code/BROWSER_BRIDGE.md`

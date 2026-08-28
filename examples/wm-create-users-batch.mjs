@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import WebSocket from "ws";
+import { connect, sleep } from "../lib/client.mjs";
 
 const PORTS = (process.env.BRIDGE_PORT || "9333,9222").split(",").map((p) => Number(p.trim()));
 const password = "BridgeTest1234!";
@@ -15,48 +15,6 @@ const users = [
   { firstName: "Sofia", lastName: "Nguyen", email: `sofia.nguyen.${stamp}@example.com`, phone: "+15555550203", role: "patient" },
 ];
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function connect(port) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
-  let id = 1;
-  const pending = new Map();
-
-  function rpc(method, params = {}, timeoutMs = 45000) {
-    const reqId = id++;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pending.delete(reqId);
-        reject(new Error(`timeout: ${method}`));
-      }, timeoutMs);
-      pending.set(reqId, { resolve, reject, timer });
-      ws.send(JSON.stringify({ jsonrpc: "2.0", id: reqId, method, params }));
-    });
-  }
-
-  ws.on("message", (data) => {
-    try {
-      const msg = JSON.parse(data.toString());
-      if (msg.id != null && pending.has(msg.id)) {
-        const { resolve, reject, timer } = pending.get(msg.id);
-        clearTimeout(timer);
-        pending.delete(msg.id);
-        if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-        else resolve(msg.result);
-      }
-    } catch {}
-  });
-
-  await new Promise((resolve, reject) => {
-    ws.on("open", resolve);
-    ws.on("error", reject);
-  });
-
-  return { ws, rpc, port };
-}
-
 async function waitForBridge(port, maxMs = 120000) {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
@@ -66,7 +24,7 @@ async function waitForBridge(port, maxMs = 120000) {
         const cfg = await conn.rpc("agent.config.get", {}, 3000);
         if (cfg?.disabled) {
           console.log(`Port ${port}: bridge disabled — enable it in the extension popup, retrying…`);
-          conn.ws.close();
+          conn.close();
           await sleep(2000);
           continue;
         }
@@ -74,7 +32,7 @@ async function waitForBridge(port, maxMs = 120000) {
         console.log(`Connected on port ${port}`);
         return conn;
       } catch (e) {
-        conn.ws.close();
+        conn.close();
         if (Date.now() - start > maxMs - 3000) throw e;
         await sleep(2000);
       }
@@ -127,7 +85,7 @@ if (!conn) {
   process.exit(1);
 }
 
-const { ws, rpc } = conn;
+const { rpc, close } = conn;
 const tabs = await rpc("tabs.list");
 let tab = (tabs || []).find((t) => /page=wm-consult-people/i.test(t.url || ""));
 if (!tab) {
@@ -151,5 +109,5 @@ for (const { user, ok } of results) {
   console.log(`${ok ? "✓" : "✗"} ${user.role.padEnd(10)} ${user.firstName} ${user.lastName} <${user.email}>`);
 }
 
-ws.close();
+close();
 process.exit(results.every((r) => r.ok) ? 0 : 2);

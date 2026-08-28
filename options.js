@@ -1,4 +1,5 @@
-const DEFAULTS = { url: "ws://localhost:9222", token: "", autoReconnect: true, allowRead: true, allowInteract: true, excludedUrls: [] };
+import { DEFAULTS } from "./lib/defaults.js";
+import { esc } from "./lib/esc.js";
 
 function getStored() {
   return new Promise((resolve) => {
@@ -94,8 +95,6 @@ function initLogUi() {
     else { clearInterval(logTimer); }
   });
 }
-
-function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
 $("save").addEventListener("click", async () => {
   const rawExcluded = $("excludedUrls").value.trim();

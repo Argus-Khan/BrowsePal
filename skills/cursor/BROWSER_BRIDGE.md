@@ -2,6 +2,8 @@
 
 Use these rules when Cursor Agent needs to control the browser through the Browser Agent Bridge extension.
 
+For the full reference, see `.opencode/skills/browser-bridge/SKILL.md`.
+
 ## How to run browser tasks
 
 Start the toolkit with a JSON task file:
@@ -9,8 +11,6 @@ Start the toolkit with a JSON task file:
 ```bash
 node examples/agent-tools.mjs <task-file>.json
 ```
-
-The toolkit connects to the Browser Agent Bridge extension over WebSocket and executes standard actions.
 
 ## Standard toolkit actions
 
@@ -27,20 +27,7 @@ The toolkit connects to the Browser Agent Bridge extension over WebSocket and ex
 
 ## Action reference
 
-- `goto` — navigate to URL
-- `read` — read text from page/selector
-- `find` — find elements by selector or text
-- `click` — click element
-- `type` — type/set value
-- `pressKey` — press a key
-- `submit` — submit a form
-- `wait` — wait for element
-- `screenshot` — take screenshot
-- `scroll` — scroll page/element
-- `tabs` — list tabs
-- `active` — get active tab
-- `sleep` — pause
-- `eval` — run JS (may fail on CSP sites)
+`goto`, `read`, `find`, `click`, `type`, `pressKey`, `submit`, `wait`, `screenshot`, `scroll`, `tabs`, `active`, `findTab`, `sleep`, `eval`
 
 ## Guidelines
 

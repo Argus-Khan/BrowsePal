@@ -9,6 +9,7 @@ import {
   createCookiesApi, createExtStorageApi,
 } from "./lib/storage.js";
 import { chrome } from "./lib/browser.js";
+import { DEFAULTS, CONFIG_KEYS } from "./lib/defaults.js";
 
 console.log("[bridge] background module loading…");
 
@@ -104,9 +105,8 @@ rpc.registerAll({
     disabled: !!cfg.disabled,
   }),
   "agent.config.set": async (p) => {
-    const allowed = ["url","token","autoReconnect","allowRead","allowInteract","excludedUrls","disabled"];
     const patch = {};
-    for (const key of allowed) {
+    for (const key of CONFIG_KEYS) {
       if (p[key] !== undefined) patch[key] = p[key];
     }
     if (patch.excludedUrls && !Array.isArray(patch.excludedUrls)) delete patch.excludedUrls;
@@ -160,7 +160,7 @@ chrome.webRequest.onBeforeRequest.addListener(
 );
 
 let transport;
-let cfg = { url: "ws://127.0.0.1:9222", token: "", autoReconnect: true, allowRead: true, allowInteract: true, excludedUrls: [], disabled: false };
+let cfg = { ...DEFAULTS };
 
 const _rpcHandle = rpc.handle.bind(rpc);
 rpc.handle = (msg, transport) => {

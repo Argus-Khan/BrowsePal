@@ -20,6 +20,8 @@
     "options.html",
     "options.js",
     "options.css",
+    "popup.html",
+    "popup.js",
     "lib/",
     "dist/"
   ],

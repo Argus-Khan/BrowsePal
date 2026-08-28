@@ -1,4 +1,4 @@
-function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+import { esc } from "./lib/esc.js";
 
 async function getCurrentTab() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });

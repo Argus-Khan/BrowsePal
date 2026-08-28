@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import manifestChrome from "../manifest.json" with { type: "json" };
-import manifestFirefox from "../manifest-firefox.json" with { type: "json" };
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
-const files = [
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = join(__dirname, "..");
+
+const SHARED_FILES = [
   "background.js",
   "content.js",
   "options.html",
@@ -15,23 +18,27 @@ const files = [
 ];
 
 async function build() {
-  if (existsSync("dist")) await rm("dist", { recursive: true });
+  const distDir = join(root, "dist");
+  if (existsSync(distDir)) await rm(distDir, { recursive: true });
 
-  await mkdir("dist/chrome", { recursive: true });
-  await mkdir("dist/firefox", { recursive: true });
-  await mkdir("dist/chrome/lib", { recursive: true });
-  await mkdir("dist/firefox/lib", { recursive: true });
+  for (const browser of ["chrome", "firefox"]) {
+    const dir = join(distDir, browser);
+    const libDir = join(dir, "lib");
+    await mkdir(libDir, { recursive: true });
 
-  for (const f of files) {
-    await cp(f, `dist/chrome/${f}`);
-    await cp(f, `dist/firefox/${f}`);
+    // Copy shared files
+    for (const f of SHARED_FILES) {
+      await cp(join(root, f), join(dir, f));
+    }
+
+    // Copy lib/ directory
+    await cp(join(root, "lib"), libDir, { recursive: true, force: true });
+
+    // Write browser-specific manifest
+    const manifestSrc = browser === "chrome" ? "manifest.json" : "manifest-firefox.json";
+    const manifest = await import(join(root, manifestSrc), { with: { type: "json" } });
+    await writeFile(join(dir, "manifest.json"), JSON.stringify(manifest.default, null, 2));
   }
-
-  await cp("lib/", "dist/chrome/lib/", { recursive: true, force: true });
-  await cp("lib/", "dist/firefox/lib/", { recursive: true, force: true });
-
-  await writeFile("dist/chrome/manifest.json", JSON.stringify(manifestChrome, null, 2));
-  await writeFile("dist/firefox/manifest.json", JSON.stringify(manifestFirefox, null, 2));
 
   console.log("Built dist/chrome/ and dist/firefox/");
 }

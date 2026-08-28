@@ -7,6 +7,8 @@ description: Browser automation via the Browser Agent Bridge extension. Use for 
 
 This skill lets you control the user's browser through the Browser Agent Bridge extension.
 
+For the full reference, see `.opencode/skills/browser-bridge/SKILL.md`.
+
 ## Quick start
 
 1. Install the Browser Agent Bridge extension in Chrome or Firefox.
@@ -37,20 +39,7 @@ node examples/agent-tools.mjs task.json
 
 ## Available actions
 
-- `goto` — navigate
-- `read` — read text
-- `find` — find elements
-- `click` — click
-- `type` — type/set value
-- `pressKey` — press a key
-- `submit` — submit form
-- `wait` — wait for element
-- `screenshot` — capture screenshot
-- `scroll` — scroll
-- `tabs` — list tabs
-- `active` — get active tab
-- `sleep` — pause
-- `eval` — run JS (may fail on CSP-restricted sites)
+`goto`, `read`, `find`, `click`, `type`, `pressKey`, `submit`, `wait`, `screenshot`, `scroll`, `tabs`, `active`, `findTab`, `sleep`, `eval`
 
 ## Notes
 

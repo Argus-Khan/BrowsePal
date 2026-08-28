@@ -1,38 +1,6 @@
-import WebSocket from "ws";
+import { connect } from "../lib/client.mjs";
 
-const ws = new WebSocket("ws://127.0.0.1:9222");
-let id = 1;
-const pending = new Map();
-
-function rpc(method, params = {}, timeoutMs = 30000) {
-  const reqId = id++;
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(reqId);
-      reject(new Error(`timeout: ${method}`));
-    }, timeoutMs);
-    pending.set(reqId, { resolve, reject, timer });
-    ws.send(JSON.stringify({ jsonrpc: "2.0", id: reqId, method, params }));
-  });
-}
-
-ws.on("message", (data) => {
-  try {
-    const msg = JSON.parse(data.toString());
-    if (msg.id != null && pending.has(msg.id)) {
-      const { resolve, reject, timer } = pending.get(msg.id);
-      clearTimeout(timer);
-      pending.delete(msg.id);
-      if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-      else resolve(msg.result);
-    }
-  } catch {}
-});
-
-await new Promise((resolve, reject) => {
-  ws.on("open", resolve);
-  ws.on("error", reject);
-});
+const { rpc, close } = await connect(9222);
 
 const tabs = await rpc("tabs.list");
 console.log("TABS", JSON.stringify(tabs, null, 2));
@@ -44,7 +12,7 @@ console.log("PORTAL_TAB", portal || live || null);
 const tabId = (portal || live)?.id;
 if (!tabId) {
   console.log("NO_LIVE_TAB");
-  ws.close();
+  close();
   process.exit(0);
 }
 
@@ -92,4 +60,4 @@ const probe = await rpc("page.eval", {
 });
 console.log("\nPROBE", JSON.stringify(probe, null, 2));
 
-ws.close();
+close();
