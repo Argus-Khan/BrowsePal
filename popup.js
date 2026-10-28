@@ -1,5 +1,80 @@
 import { esc } from "./lib/esc.js";
 
+// ─── Diagnostic: Window Dimension Monitor ─────────────────────────────────
+// Logs window + document dimensions at every lifecycle point to diagnose
+// popup shrink issues (e.g. pop-shell tiling interference).
+const TAG = "[popup-diag]";
+function dimSnapshot(label) {
+  const w = window;
+  const d = document;
+  const de = d.documentElement;
+  console.log(TAG, label, JSON.stringify({
+    innerW: w.innerWidth,
+    innerH: w.innerHeight,
+    outerW: w.outerWidth,
+    outerH: w.outerHeight,
+    screenX: w.screenX,
+    screenY: w.screenY,
+    docEl_clientW: de.clientWidth,
+    docEl_clientH: de.clientHeight,
+    docEl_offsetW: de.offsetWidth,
+    docEl_offsetH: de.offsetHeight,
+    body_clientW: d.body ? d.body.clientWidth : null,
+    body_clientH: d.body ? d.body.clientHeight : null,
+    body_offsetW: d.body ? d.body.offsetWidth : null,
+    body_offsetH: d.body ? d.body.offsetHeight : null,
+    doc_scrollW: d.scrollWidth,
+    doc_scrollH: d.scrollHeight,
+    devicePixelRatio: w.devicePixelRatio,
+  }));
+}
+
+// Log immediately (before DOM is ready)
+dimSnapshot("script-start");
+
+// Watch for ANY dimension change
+const ro = new ResizeObserver((entries) => {
+  for (const entry of entries) {
+    const t = entry.target;
+    const label = t === document.documentElement ? "html" : t === document.body ? "body" : t.tagName;
+    console.log(TAG, "resize-observer:" + label, JSON.stringify({
+      clientW: entry.contentRect.width,
+      clientH: entry.contentRect.height,
+      innerW: window.innerWidth,
+      outerW: window.outerWidth,
+    }));
+  }
+});
+// Will observe once body exists
+
+window.addEventListener("resize", () => {
+  dimSnapshot("window-resize-event");
+});
+
+// Periodic polling to catch changes that don't fire events
+let _pollCount = 0;
+const _pollLog = [];
+function pollDims() {
+  _pollCount++;
+  const snap = {
+    t: Date.now(),
+    innerW: window.innerWidth,
+    outerW: window.outerWidth,
+    bodyW: document.body ? document.body.offsetWidth : null,
+    docW: document.documentElement.offsetWidth,
+  };
+  _pollLog.push(snap);
+  // Log every poll for first 30, then every 10th
+  if (_pollCount <= 30 || _pollCount % 10 === 0) {
+    console.log(TAG, "poll#" + _pollCount, JSON.stringify(snap));
+  }
+}
+const _pollTimer = setInterval(pollDims, 200);
+// Stop polling after 15 seconds
+setTimeout(() => { clearInterval(_pollTimer); console.log(TAG, "polling stopped after", _pollCount, "samples"); }, 15000);
+
+// ─── Existing popup logic ──────────────────────────────────────────────────
+
 async function getCurrentTab() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs[0] || null;
@@ -62,6 +137,12 @@ async function refresh() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  dimSnapshot("DOMContentLoaded");
+
+  // Start observing body and html for size changes
+  if (document.body) ro.observe(document.body);
+  ro.observe(document.documentElement);
+
   document.getElementById("enabledToggle").addEventListener("change", async (e) => {
     try {
       const disabled = !e.target.checked;
@@ -111,5 +192,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  refresh();
+  refresh().then(() => dimSnapshot("after-refresh"));
+});
+
+window.addEventListener("load", () => {
+  dimSnapshot("window-load");
+  // Log again shortly after load to catch late layout shifts
+  setTimeout(() => dimSnapshot("load+500ms"), 500);
+  setTimeout(() => dimSnapshot("load+1000ms"), 1000);
+  setTimeout(() => dimSnapshot("load+2000ms"), 2000);
 });

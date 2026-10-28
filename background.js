@@ -601,6 +601,63 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+// ─── Diagnostic: Popup Window Monitor ────────────────────────────────────────
+// Tracks all window creation/resizing to diagnose popup shrink issues
+// (e.g. pop-shell tiling manager interfering with extension popups).
+
+if (chrome.windows) {
+  const diagTag = "[win-diag]";
+
+  // Log all windows on startup
+  chrome.windows.getAll({ populate: false }, (windows) => {
+    for (const w of windows) {
+      console.log(diagTag, "initial-window", JSON.stringify({
+        id: w.id, type: w.type, state: w.state,
+        width: w.width, height: w.height,
+        left: w.left, top: w.top,
+        focused: w.focused,
+      }));
+    }
+  });
+
+  // Track window creation
+  chrome.windows.onCreated.addListener((window) => {
+    console.log(diagTag, "created", JSON.stringify({
+      id: window.id, type: window.type, state: window.state,
+      width: window.width, height: window.height,
+      left: window.left, top: window.top,
+    }));
+  });
+
+  // Track window resize/move — this fires when pop-shell or anything else changes window bounds
+  chrome.windows.onBoundsChanged.addListener((window) => {
+    console.log(diagTag, "bounds-changed", JSON.stringify({
+      id: window.id, type: window.type, state: window.state,
+      width: window.width, height: window.height,
+      left: window.left, top: window.top,
+    }));
+  });
+
+  // Track window focus changes (pop-shell may resize on focus)
+  chrome.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+    chrome.windows.get(windowId, (w) => {
+      if (chrome.runtime.lastError) return;
+      console.log(diagTag, "focus-changed", JSON.stringify({
+        id: w.id, type: w.type, state: w.state,
+        width: w.width, height: w.height,
+      }));
+    });
+  });
+
+  // Track window removal
+  chrome.windows.onRemoved.addListener((windowId) => {
+    console.log(diagTag, "removed", JSON.stringify({ id: windowId }));
+  });
+
+  console.log("[bridge] popup window diagnostic monitor registered");
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
 start().catch((e) => console.error("[bridge] start() FAILED:", e && e.stack || e));
