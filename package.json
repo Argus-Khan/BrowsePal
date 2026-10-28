@@ -29,6 +29,8 @@
     "server": "node lib/server.js",
     "tools": "node examples/agent-tools.mjs",
     "build": "node scripts/build-dist.js",
+    "build:xpi": "node scripts/build-xpi.js",
+    "check": "node scripts/selfcheck.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
