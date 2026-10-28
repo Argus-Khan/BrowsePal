@@ -127,6 +127,18 @@ net.addInterceptor   {tabId?, patterns: [{match, headers?, body?, contentType?, 
 net.removeInterceptor {tabId?, id}
 ```
 
+> **Firefox:** `net.*` needs `chrome.debugger`, which Firefox does not have —
+> these methods only work on Chrome/Chromium after granting the `debugger`
+> permission in the options page.
+>
+> **Firefox fallback:** `agent.passiveLog {limit?, tabId?}` uses `webRequest` and
+> works on both browsers. Every request carries `{ ts, id, tabId, url, method,
+> type, frameId, parentFrameId, initiator, status, mimeType, duration, ok, error }`
+> (`status`/`mimeType` from `onHeadersReceived`, `duration`/`ok` from
+> `onCompleted`, `error`/`failed` from `onErrorOccurred`). It observes but never
+> intercepts — request blocking/stubbing (`net.setBlocked`, `net.addInterceptor`)
+> stays Chrome-only. Response bodies are not captured.
+
 ### `storage.*` (chrome.storage + page storage)
 ```
 storage.local.get / set / remove / clear   keys: array

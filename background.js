@@ -23,6 +23,9 @@ const cdp = new CDP();
 const net = createNetApi(cdp);
 const tabs = createTabsApi();
 const passiveLog = [];
+// requestId -> the passiveLog entry it belongs to, so webRequest listeners can
+// enrich it in place. Pruned alongside passiveLog.
+const passiveById = new Map();
 
 let transport;
 let cfg = { ...DEFAULTS };
@@ -365,6 +368,8 @@ rpc.registerAll({
 
   "agent.passiveLog.clear": () => {
     passiveLog.length = 0;
+    // Without this the Map keeps up to 2000 orphaned entries per clear.
+    passiveById.clear();
     return { ok: true };
   },
 });
@@ -431,7 +436,7 @@ rpc.handle = (msg, transportRef) => {
 
 chrome.webRequest.onBeforeRequest.addListener(
   (details) => {
-    passiveLog.push({
+    const entry = {
       ts: details.timeStamp,
       id: details.requestId,
       tabId: details.tabId,
@@ -441,9 +446,12 @@ chrome.webRequest.onBeforeRequest.addListener(
       frameId: details.frameId,
       parentFrameId: details.parentFrameId,
       initiator: details.initiator,
-    });
+    };
+    passiveLog.push(entry);
+    passiveById.set(details.requestId, entry);
     if (passiveLog.length > 2000) {
-      passiveLog.splice(0, passiveLog.length - 2000);
+      const dropped = passiveLog.splice(0, passiveLog.length - 2000);
+      for (const d of dropped) passiveById.delete(d.id);
     }
     if (transport && transport.ready) {
       transport.sendObj({
@@ -458,6 +466,49 @@ chrome.webRequest.onBeforeRequest.addListener(
         },
       });
     }
+  },
+  { urls: ["<all_urls>"] },
+);
+
+// ─── Passive log enrichment (status, timing) ──────────────────────────────────
+//
+// webRequest is the only network source Firefox has — net.* needs the Chrome
+// debugger permission — so these listeners are what turn the bare request list
+// into a usable Network log there. They also run on Chrome, where they coexist
+// with net.* (they only annotate entries, never intercept).
+
+chrome.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    const e = passiveById.get(details.requestId);
+    if (!e) return;
+    e.status = details.statusCode;
+    const headers = details.responseHeaders || [];
+    for (const h of headers) {
+      if (h.name.toLowerCase() === "content-type") { e.mimeType = h.value; break; }
+    }
+  },
+  { urls: ["<all_urls>"] },
+  ["responseHeaders"],
+);
+
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    const e = passiveById.get(details.requestId);
+    if (!e) return;
+    if (e.status == null) e.status = details.statusCode;
+    e.duration = Math.round((details.timeStamp - e.ts) * 10) / 10;
+    e.ok = details.statusCode < 400;
+  },
+  { urls: ["<all_urls>"] },
+);
+
+chrome.webRequest.onErrorOccurred.addListener(
+  (details) => {
+    const e = passiveById.get(details.requestId);
+    if (!e) return;
+    e.error = details.error;
+    e.failed = true;
+    e.duration = Math.round((details.timeStamp - e.ts) * 10) / 10;
   },
   { urls: ["<all_urls>"] },
 );
