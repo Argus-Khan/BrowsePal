@@ -4,22 +4,51 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 // Generic Browser Agent Toolkit
 // Reads a JSON task file and executes standard cross-site actions.
-// Usage: node examples/agent-tools.mjs task.json
-//        node examples/agent-tools.mjs task.json --watch
+// Usage: node examples/agent-tools.mjs task.json [flags]
+//          --port N   listen port (default 9222). Change it when something else
+//                     owns 9222 — e.g. Chrome's --remote-debugging-port.
+//          --watch    re-run when the task file changes
+//          --output F write the final result to F
 
 const args = process.argv.slice(2);
-const taskFile = args[0] || "task.json";
+// Only these count as flags, so a task file named "--staging.json" still parses.
+const FLAGS = new Set(["--watch", "--port", "--output"]);
+const WITH_VALUE = new Set(["--port", "--output"]);
+let taskFile = null;
+for (let i = 0; i < args.length; i++) {
+  if (FLAGS.has(args[i])) { if (WITH_VALUE.has(args[i])) i++; continue; }
+  taskFile = args[i];
+  break;
+}
+taskFile = taskFile || "task.json";
 const watch = args.includes("--watch");
-const outputFile = (() => {
-  const i = args.indexOf("--output"); return i >= 0 ? args[i + 1] : null;
-})();
+const outputFlag = args.indexOf("--output");
+const outputFile = outputFlag >= 0 ? args[outputFlag + 1] : null;
+const portFlag = args.indexOf("--port");
+const port = portFlag >= 0 ? parseInt(args[portFlag + 1], 10) : 9222;
+
+// Fail loudly instead of silently binding 9222 and then blaming a port conflict.
+if (portFlag >= 0 && !Number.isInteger(port)) {
+  console.error("[toolkit] --port needs a number, got: " + (args[portFlag + 1] != null ? args[portFlag + 1] : "(nothing)"));
+  process.exit(1);
+}
+if (outputFlag >= 0 && !outputFile) {
+  console.error("[toolkit] --output needs a file name");
+  process.exit(1);
+}
 
 const host = "127.0.0.1";
-const port = 9222;
 const wss = new WebSocketServer({ host, port });
 let bridge = null;
 let nextId = 1;
 const pending = new Map();
+
+// Without this an occupied port surfaces as an unhandled 'error' event crash.
+wss.on("error", (e) => {
+  console.error(`[toolkit] cannot listen on ${host}:${port} — ${e.message}`);
+  console.error("[toolkit] something else may own that port (Chrome's debugging port is 9222); retry with --port <N>");
+  process.exit(1);
+});
 
 wss.on("connection", (ws) => {
   bridge = ws;
