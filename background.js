@@ -107,6 +107,8 @@ const READ_METHODS = new Set([
   "page.getValue", "page.screenshot", "page.frames", "page.eval",
   // High-level page reads
   "page.snapshot", "page.subscribe", "page.unsubscribe",
+  // Console + performance (observation only — console.clear is not gated)
+  "console.getLog", "perf.metrics", "perf.resources",
 ]);
 
 const INTERACT_METHODS = new Set([
@@ -170,6 +172,13 @@ const NET_METHODS = [
   "net.enable", "net.disable", "net.getLog", "net.getRequest", "net.clear",
   "net.throttle", "net.setBlocked", "net.addInterceptor", "net.removeInterceptor",
 ];
+
+// Console + performance run in the content script, like the page.* family.
+// frameId defaults to 0 (top frame): omitting it broadcasts to every frame in
+// the tab and the first responder wins, which would hand back an iframe's
+// console buffer. Pass frameId explicitly to reach a specific frame.
+const CONSOLE_METHODS = ["console.getLog", "console.clear"];
+const PERF_METHODS = ["perf.metrics", "perf.resources"];
 
 // ─── Message type mappings (background → content script) ──────────────────────
 //
@@ -286,6 +295,20 @@ const pageStorageNs = createPageStorageApi();
 const cookiesNs     = createCookiesApi();
 const extStorageNs  = createExtStorageApi();
 
+const consoleNs = Object.fromEntries(
+  CONSOLE_METHODS.map((m) => [m, withAccessCheck(m, (params) => {
+    const frameId = params.frameId != null ? params.frameId : 0;
+    return forwardToContent(params.tabId, frameId, MSG.CONSOLE, { ...params, op: name2key(m) });
+  })]),
+);
+
+const perfNs = Object.fromEntries(
+  PERF_METHODS.map((m) => [m, withAccessCheck(m, (params) => {
+    const frameId = params.frameId != null ? params.frameId : 0;
+    return forwardToContent(params.tabId, frameId, MSG.PERF, { ...params, op: name2key(m) });
+  })]),
+);
+
 // ─── Register all RPC methods ─────────────────────────────────────────────────
 
 rpc.registerAll({
@@ -297,6 +320,10 @@ rpc.registerAll({
 
   // Network (CDP)
   ...netNs,
+
+  // Console + performance (works on Chrome and Firefox — no CDP)
+  ...consoleNs,
+  ...perfNs,
 
   // Storage
   ...idbNs,

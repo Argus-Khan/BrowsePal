@@ -841,6 +841,9 @@
         _subscribeElementHidden(subscriptionId, sub, event);
       } else if (event.type === "page.loaded") {
         pushEvent(subscriptionId, "page.loaded", { url: location.href });
+      } else if (event.type === "console.entry") {
+        // New entries only — console.getLog returns the history.
+        sub.consoleEntry = true;
       }
     }
 
@@ -1317,6 +1320,195 @@
     }
   }
 
+  // ─── Console Capture ───────────────────────────────────────────────────
+  //
+  // Entries are produced by console-capture.js in the page's MAIN world and
+  // arrive over the "bab:console" DOM event — the only channel both worlds
+  // share. Keeping a bounded per-frame buffer is what makes console.getLog
+  // behave like the DevTools Console panel: history since page load, not
+  // history since the agent asked.
+
+  var CONSOLE_EVENT = "bab:console";
+  var CONSOLE_FLUSH_EVENT = "bab:console-flush";
+  var CONSOLE_MAX = 1000;
+  var consoleBuf = [];
+  var consoleLastSeq = 0;
+
+  window.addEventListener(CONSOLE_EVENT, function (ev) {
+    var entry = ev && ev.detail;
+    if (!entry || typeof entry.seq !== "number") return;
+    // seq dedupes the bootstrap replay against entries we already caught live.
+    if (entry.seq <= consoleLastSeq) return;
+    consoleLastSeq = entry.seq;
+    consoleBuf.push(entry);
+    if (consoleBuf.length > CONSOLE_MAX) consoleBuf.shift();
+    subscriptions.forEach(function (sub, subscriptionId) {
+      if (sub.consoleEntry) pushEvent(subscriptionId, "console.entry", entry);
+    });
+  });
+
+  // Ask the MAIN-world hook to replay anything logged before we attached.
+  // Guarded: if this threw, everything after it — including the message router —
+  // would never register.
+  try {
+    window.dispatchEvent(new CustomEvent(CONSOLE_FLUSH_EVENT));
+  } catch (e) { /* no capture hook on this page */ }
+
+  function handleConsole(msg) {
+    var op = msg.op;
+    if (op === "clear") {
+      consoleBuf.length = 0;
+      // Keep consoleLastSeq — a replayed seq at or below it must stay rejected,
+      // otherwise a re-flush would resurrect cleared entries.
+      return true;
+    }
+    if (op === "getLog") {
+      var f = msg.filter || {};
+      var out = [];
+      for (var i = 0; i < consoleBuf.length; i++) {
+        var e = consoleBuf[i];
+        if (f.level && e.level !== f.level) continue;
+        if (f.levels && f.levels.indexOf(e.level) === -1) continue;
+        if (f.text && (e.text || "").indexOf(f.text) === -1) continue;
+        if (f.since && e.ts < f.since) continue;
+        out.push(e);
+      }
+      var limit = typeof msg.limit === "number" ? msg.limit : 500;
+      if (limit <= 0) return [];
+      return out.length > limit ? out.slice(-limit) : out;
+    }
+    throw new Error("unknown console op: " + op);
+  }
+
+  // ─── Performance ───────────────────────────────────────────────────────
+  //
+  // Straight Performance API — no CDP, so it behaves the same on Chrome and
+  // Firefox. Observers register lazily with buffered:true (so entries recorded
+  // before the first call are still returned) and then stay registered, which
+  // is what stops CLS/INP from being counted twice on later calls. Every
+  // metric is feature-detected: Firefox simply reports supported:false.
+
+  var perfInited = false;
+  var perfSupported = { lcp: false, cls: false, inp: false, longTask: false };
+  var perfLatest = { lcp: null, cls: 0, inp: null, eventMax: null, longTaskTotal: 0 };
+  var perfInpSamples = [];
+  var INP_SAMPLE_MAX = 500;
+
+  function _canObserve(type) {
+    return typeof PerformanceObserver !== "undefined" &&
+      PerformanceObserver.supportedEntryTypes &&
+      PerformanceObserver.supportedEntryTypes.indexOf(type) !== -1;
+  }
+
+  function _observe(type, onEntries) {
+    if (!_canObserve(type)) return false;
+    try {
+      new PerformanceObserver(function (list) { onEntries(list.getEntries()); })
+        .observe({ type: type, buffered: true });
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function _perfInit() {
+    if (perfInited) return;
+    perfInited = true;
+
+    perfSupported.lcp = _observe("largest-contentful-paint", function (es) {
+      if (es.length) perfLatest.lcp = es[es.length - 1].startTime;
+    });
+
+    perfSupported.cls = _observe("layout-shift", function (es) {
+      for (var i = 0; i < es.length; i++) {
+        if (!es[i].hadRecentInput) perfLatest.cls += es[i].value;
+      }
+    });
+
+    perfSupported.inp = _observe("event", function (es) {
+      for (var i = 0; i < es.length; i++) {
+        var d = es[i].duration;
+        if (d > (perfLatest.eventMax || 0)) perfLatest.eventMax = d;
+        perfInpSamples.push(d);
+        if (perfInpSamples.length > INP_SAMPLE_MAX) perfInpSamples.shift();
+      }
+      if (perfInpSamples.length) {
+        var sorted = perfInpSamples.slice().sort(function (a, b) { return b - a; });
+        // shortcut: drops only the single worst interaction instead of the
+        // web-vitals 1% tail — fine for comparing runs, not for scoring.
+        if (sorted.length >= 50) sorted.shift();
+        perfLatest.inp = sorted[0];
+      }
+    });
+
+    perfSupported.longTask = _observe("longtask", function (es) {
+      for (var i = 0; i < es.length; i++) perfLatest.longTaskTotal += es[i].duration;
+    });
+  }
+
+  function handlePerf(msg) {
+    _perfInit();
+    var op = msg.op;
+    var i;
+
+    if (op === "metrics") {
+      var nav = performance.getEntriesByType("navigation")[0] || null;
+      var fcp = null;
+      var paints = performance.getEntriesByType("paint");
+      for (i = 0; i < paints.length; i++) {
+        if (paints[i].name === "first-contentful-paint") fcp = paints[i].startTime;
+      }
+      // 0 means "not measured yet" (loadEventEnd before the load event).
+      function ms(v) { return v > 0 ? Math.round(v * 10) / 10 : null; }
+      return {
+        url: location.href,
+        ttfb: nav ? ms(nav.responseStart) : null,
+        dns: nav ? ms(nav.domainLookupEnd - nav.domainLookupStart) : null,
+        connect: nav ? ms(nav.connectEnd - nav.connectStart) : null,
+        tls: nav && nav.secureConnectionStart ? ms(nav.connectEnd - nav.secureConnectionStart) : null,
+        waiting: nav ? ms(nav.responseStart - nav.requestStart) : null,
+        download: nav ? ms(nav.responseEnd - nav.responseStart) : null,
+        domInteractive: nav ? ms(nav.domInteractive) : null,
+        domContentLoaded: nav ? ms(nav.domContentLoadedEventEnd) : null,
+        load: nav ? ms(nav.loadEventEnd) : null,
+        fcp: ms(fcp),
+        lcp: ms(perfLatest.lcp),
+        cls: Math.round(perfLatest.cls * 1000) / 1000,
+        inp: perfLatest.inp != null ? Math.round(perfLatest.inp) : null,
+        eventMax: ms(perfLatest.eventMax),
+        longTaskTotal: ms(perfLatest.longTaskTotal),
+        supported: perfSupported,
+      };
+    }
+
+    if (op === "resources") {
+      var all = performance.getEntriesByType("resource");
+      var f = msg.filter || {};
+      var limit = typeof msg.limit === "number" ? msg.limit : 200;
+      if (limit <= 0) return { total: all.length, shown: 0, entries: [] };
+      var out = [];
+      for (i = 0; i < all.length; i++) {
+        var r = all[i];
+        if (f.url && r.name.indexOf(f.url) === -1) continue;
+        if (f.type && r.initiatorType !== f.type) continue;
+        out.push({
+          url: r.name,
+          type: r.initiatorType,
+          start: Math.round(r.startTime * 10) / 10,
+          duration: Math.round(r.duration * 10) / 10,
+          waiting: Math.round((r.responseStart - r.requestStart) * 10) / 10,
+          download: Math.round((r.responseEnd - r.responseStart) * 10) / 10,
+          size: r.decodedBodySize || 0,
+          // 0 for cross-origin without Timing-Allow-Origin.
+          transferSize: r.transferSize || 0,
+          protocol: r.nextHopProtocol || null,
+        });
+        if (out.length >= limit) break;
+      }
+      return { total: all.length, shown: out.length, entries: out };
+    }
+
+    throw new Error("unknown perf op: " + op);
+  }
+
   // ─── Message Router ────────────────────────────────────────────────────
 
   function handle(msg) {
@@ -1394,6 +1586,14 @@
         return handleIdb(params).then(function (r) { return ok(r); });
       } catch (e) { return Promise.resolve(err(e.message)); }
     }
+    if (type === "ba:console") {
+      try { return Promise.resolve(ok(handleConsole(params))); }
+      catch (e) { return Promise.resolve(err(e.message)); }
+    }
+    if (type === "ba:perf") {
+      try { return Promise.resolve(ok(handlePerf(params))); }
+      catch (e) { return Promise.resolve(err(e.message)); }
+    }
 
     // ── Legacy protocol (no prefix) ─────────────────────────────────────
     if (type === "storage") {
@@ -1432,6 +1632,11 @@
   // ─── Initialize ────────────────────────────────────────────────────────
 
   console.log("[browsepal] content script loaded on", location.hostname);
+
+  // Register the Web Vitals observers now rather than on first perf.metrics
+  // call: observer callbacks (including buffered:true replay) are queued tasks,
+  // so a call made in the same turn as registration reads zeroed values.
+  _perfInit();
 
   // Fire page.loaded for any early subscriptions
   if (document.readyState === "complete" || document.readyState === "interactive") {

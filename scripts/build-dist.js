@@ -10,6 +10,7 @@ const root = join(__dirname, "..");
 const SHARED_FILES = [
   "background.js",
   "content.js",
+  "console-capture.js",
   "options.html",
   "options.js",
   "options.css",

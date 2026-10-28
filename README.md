@@ -177,6 +177,62 @@ indexedDB.keys       {tabId, db, store, query?, limit?}
 indexedDB.getAll     {tabId, db, store, query?, limit?}
 ```
 
+### `console.*` (works on Chrome and Firefox)
+
+```
+console.getLog      {tabId?, frameId?, limit?, filter?}  → entries, oldest first
+console.clear       {tabId?, frameId?}                   → true
+```
+
+Entries: `{ seq, ts, level, text, url, line, col, source, stack }` where `level` is
+`log|info|warn|error|debug|trace|table|dir|assert`. `filter` accepts
+`{ level, levels: [...], text, since }` (`text` is a substring match, `since` a ms
+timestamp).
+
+Captured by `console-capture.js` in the page's **MAIN world** — an isolated-world
+content script cannot see the page's console at all. It also records uncaught
+`window.onerror` and `unhandledrejection` events. A bounded per-frame buffer
+(1000 entries) means `console.getLog` returns history since page load, not since
+you asked. Real-time streaming uses the existing subscription channel:
+
+```json
+{ "jsonrpc": "2.0", "id": 1, "method": "page.subscribe",
+  "params": { "subscriptionId": "c1", "events": [{ "type": "console.entry" }] } }
+```
+
+each entry then arrives as a `ba.event` notification with `params.type` set to
+`console.entry`.
+
+> Messages logged **before** the extension was installed, or in pages it does not
+> match, are never captured. Requires Chrome 111+ / Firefox 128+ (`"world": "MAIN"`).
+>
+> `frameId` defaults to **0 (top frame)** for `console.*` and `perf.*`. Omitting it
+> would broadcast to every frame in the tab and let the first responder win, which
+> hands back an iframe's buffer — pass a `frameId` from `page.frames` to target one.
+
+### `perf.*` (works on Chrome and Firefox)
+
+```
+perf.metrics    {tabId?, frameId?}                 → timings + Web Vitals
+perf.resources  {tabId?, frameId?, limit?, filter?} → resource timing table
+```
+
+`perf.metrics` returns `{ ttfb, dns, connect, tls, waiting, download,
+domInteractive, domContentLoaded, load, fcp, lcp, cls, inp, eventMax,
+longTaskTotal, supported }` in milliseconds. Every Web Vital is feature-detected
+via `PerformanceObserver.supportedEntryTypes` and reported in `supported` —
+Firefox reports `lcp`/`cls`/`inp` as `false` where it has no implementation, so
+read `supported` before treating `null` as "bad score".
+
+`perf.resources` returns `{ total, shown, entries }` with the Network panel's
+timing columns: `{ url, type, start, duration, waiting, download, size,
+transferSize, protocol }`. `filter` accepts `{ url, type }`. `transferSize` is 0
+for cross-origin responses without a `Timing-Allow-Origin` header.
+
+> **No CDP needed** — this is the plain Performance API, which is why it behaves
+> identically on Firefox. `INP` is a rolling-window approximation (see the
+> `shortcut:` comment in `content.js`), good for comparing runs, not for scoring.
+
 ## Permissions, why
 
 | Permission | Reason |

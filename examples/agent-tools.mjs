@@ -155,6 +155,18 @@ const tools = {
   async eval({ code, tabId, frameId }) {
     return rpc("page.eval", { tabId: asNum(tabId), frameId: asNum(frameId), code });
   },
+  async consoleLog({ filter, limit, tabId }) {
+    return rpc("console.getLog", { tabId: asNum(tabId), filter, limit });
+  },
+  async consoleClear({ tabId }) {
+    return rpc("console.clear", { tabId: asNum(tabId) });
+  },
+  async perfMetrics({ tabId }) {
+    return rpc("perf.metrics", { tabId: asNum(tabId) });
+  },
+  async perfResources({ filter, limit, tabId }) {
+    return rpc("perf.resources", { tabId: asNum(tabId), filter, limit });
+  },
 };
 
 function resolveRefs(value, state) {

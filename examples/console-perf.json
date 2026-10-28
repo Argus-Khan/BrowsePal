@@ -1,0 +1,9 @@
+[
+  { "action": "goto", "url": "https://example.com", "newTab": true },
+  { "action": "wait", "selector": "h1", "timeoutMs": 10000 },
+  { "action": "sleep", "ms": 500 },
+  { "action": "perfMetrics", "saveAs": "perf" },
+  { "action": "perfResources", "limit": 20, "saveAs": "resources" },
+  { "action": "consoleLog", "limit": 50, "saveAs": "console" },
+  { "action": "screenshot" }
+]
