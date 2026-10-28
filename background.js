@@ -51,16 +51,15 @@ function name2key(m) {
 }
 
 /**
- * Build a ws.js-compatible config by merging current app config with a patch,
- * ensuring the `url` field is constructed from host/port.
- * ws.js still expects cfg.url — this adapter bridges the gap.
+ * Build a ws.js-compatible config by merging current app config with a patch.
+ * If a full URL is provided (or already stored), use it directly.
+ * Otherwise construct from host/port for backward compatibility.
  */
 function wsCfg(patch = {}) {
-  return {
-    ...cfg,
-    ...patch,
-    url: `ws://${patch.host || cfg.host}:${patch.port || cfg.port}`,
-  };
+  const merged = { ...cfg, ...patch };
+  // Prefer the full URL if set, otherwise build from host/port
+  const url = merged.url || `ws://${merged.host || "127.0.0.1"}:${merged.port || 9222}`;
+  return { ...merged, url };
 }
 
 // ─── Content script communication ─────────────────────────────────────────────
@@ -312,9 +311,7 @@ rpc.registerAll({
 
   "agent.status": () => ({
     connected: !!transport.ready,
-    host: cfg.host,
-    port: cfg.port,
-    url: `ws://${cfg.host}:${cfg.port}`,
+    url: cfg.url || `ws://${cfg.host || "127.0.0.1"}:${cfg.port || 9222}`,
     attachedTabs: [...cdp.attached],
     passiveLogSize: passiveLog.length,
     allowRead: cfg.allowRead,
@@ -323,9 +320,7 @@ rpc.registerAll({
   }),
 
   "agent.config.get": () => ({
-    host: cfg.host,
-    port: cfg.port,
-    url: `ws://${cfg.host}:${cfg.port}`,
+    url: cfg.url || `ws://${cfg.host || "127.0.0.1"}:${cfg.port || 9222}`,
     hasToken: !!cfg.token,
     autoReconnect: cfg.autoReconnect,
     allowRead: cfg.allowRead,
@@ -351,7 +346,7 @@ rpc.registerAll({
 
   "agent.reconnect": () => {
     if (transport) transport.connect();
-    return { connected: !!transport.ready, host: cfg.host, port: cfg.port };
+    return { connected: !!transport.ready, url: cfg.url || `ws://${cfg.host || "127.0.0.1"}:${cfg.port || 9222}` };
   },
 
   "agent.detachAll": async () => {
@@ -516,7 +511,7 @@ async function start() {
   cdp.on((ev) => net._onCDPEvent(ev, notifyCtx()));
 
   transport.connect();
-  console.log("[bridge] transport.connect() returned. ws url:", `ws://${cfg.host}:${cfg.port}`);
+  console.log("[bridge] transport.connect() returned. ws url:", cfg.url || `ws://${cfg.host || "127.0.0.1"}:${cfg.port || 9222}`);
 }
 
 // ─── Alarm-based reconnection ─────────────────────────────────────────────────
