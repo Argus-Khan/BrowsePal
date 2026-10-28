@@ -2,7 +2,7 @@
 
 Use these instructions to control the browser through the Browser Agent Bridge extension from Claude Code.
 
-For the full reference, see `.opencode/skills/browser-bridge/SKILL.md`.
+For the full reference, see `skills/browser-bridge/SKILL.md` (or `README.md` → Protocol).
 
 ## Setup
 
@@ -30,11 +30,11 @@ Example `task.json`:
 
 ## Standard actions
 
-`goto`, `read`, `find`, `click`, `type`, `pressKey`, `submit`, `wait`, `screenshot`, `scroll`, `tabs`, `active`, `findTab`, `sleep`, `eval`
+`goto`, `read`, `find`, `click`, `clickByText`, `type`, `pressKey`, `submit`, `wait`, `screenshot`, `scroll`, `tabs`, `active`, `findTab`, `consoleLog`, `consoleClear`, `perfMetrics`, `perfResources`, `sleep`, `eval`
 
 ## Tips
 
 - Use `type` and `click` instead of `eval` on CSP-restricted sites (Gemini, ChatGPT, banking).
 - Save results with `"saveAs": "name"` to capture them for later steps.
 - On Chrome, grant the `debugger` permission in extension options to enable network tools.
-- Firefox does not support `net.*` CDP methods.
+- Firefox does not support `net.*` CDP methods — use `agent.passiveLog` for a request list (status/timing, no bodies).

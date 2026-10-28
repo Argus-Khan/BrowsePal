@@ -2,7 +2,7 @@
 
 Use these rules when Cursor Agent needs to control the browser through the Browser Agent Bridge extension.
 
-For the full reference, see `.opencode/skills/browser-bridge/SKILL.md`.
+For the full reference, see `skills/browser-bridge/SKILL.md` (or `README.md` → Protocol).
 
 ## How to run browser tasks
 
@@ -27,7 +27,7 @@ node examples/agent-tools.mjs <task-file>.json
 
 ## Action reference
 
-`goto`, `read`, `find`, `click`, `type`, `pressKey`, `submit`, `wait`, `screenshot`, `scroll`, `tabs`, `active`, `findTab`, `sleep`, `eval`
+`goto`, `read`, `find`, `click`, `clickByText`, `type`, `pressKey`, `submit`, `wait`, `screenshot`, `scroll`, `tabs`, `active`, `findTab`, `consoleLog`, `consoleClear`, `perfMetrics`, `perfResources`, `sleep`, `eval`
 
 ## Guidelines
 
@@ -35,4 +35,4 @@ node examples/agent-tools.mjs <task-file>.json
 - Use `wait` before reading dynamic content.
 - Save important outputs with `"saveAs": "key"`.
 - Chrome users: grant `debugger` permission for network tools.
-- Firefox users: `net.*` CDP methods are unavailable.
+- Firefox users: `net.*` CDP methods are unavailable — use `agent.passiveLog` for a request list (status/timing, no bodies).

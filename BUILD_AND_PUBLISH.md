@@ -297,14 +297,20 @@ npm install -g browser-agent-tools
 
 ### Update skills
 
-If you change the toolkit actions or protocol, update the canonical reference:
-- `.opencode/skills/browser-bridge/SKILL.md` (primary — most detailed)
+If you change the toolkit actions or protocol, update **every** copy of the skill
+— they must stay byte-identical (drift between copies is how they got stale):
+
+- `skills/browser-bridge/SKILL.md` — canonical, lives in this repo
+- `~/.config/opencode/skills/browser-bridge/SKILL.md` — what opencode actually loads (symlink into the dots repo)
+- `~/.config/ocv/skills/browser-bridge/SKILL.md` — same content, second config
 
 Then update the tool-specific wrappers to reference it:
 - `.opencode/agent/browser-agent.md`
-- `skills/browser-bridge/SKILL.md`
 - `skills/claude-code/BROWSER_BRIDGE.md`
 - `skills/cursor/BROWSER_BRIDGE.md`
+
+`npm run check` fails when the canonical reference goes stale, when a protocol
+method is added without documentation, or when the copies drift apart.
 
 These skills live in the repo, so they update automatically when users pull.
 
