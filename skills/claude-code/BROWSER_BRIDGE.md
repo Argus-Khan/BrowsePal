@@ -36,5 +36,5 @@ Example `task.json`:
 
 - Use `type` and `click` instead of `eval` on CSP-restricted sites (Gemini, ChatGPT, banking).
 - Save results with `"saveAs": "name"` to capture them for later steps.
-- On Chrome, grant the `debugger` permission in extension options to enable network tools.
+- On Chrome the `debugger` permission is granted at install (MV3 makes it required), so network tools work out of the box.
 - Firefox does not support `net.*` CDP methods — use `agent.passiveLog` for a request list (status/timing, no bodies).

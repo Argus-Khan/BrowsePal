@@ -136,7 +136,8 @@ node examples/agent-tools.mjs examples/console-perf.json
 
 - **Firefox:** no `chrome.debugger`, so `net.*` does not work there — use
   `agent.passiveLog` for a request list (status/timing, no bodies).
-- **Chrome:** grant the `debugger` permission in the extension options to enable `net.*`.
+- **Chrome:** `net.*` needs the `debugger` permission — required at install
+  (MV3 forbids optional `debugger`), so there is no grant step.
 - **Console capture** runs in the page's MAIN world (`console-capture.js`) —
   Chrome 111+ / Firefox 128+. It only sees messages logged after the extension
   was installed.

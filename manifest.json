@@ -17,9 +17,7 @@
     "webRequest",
     "webNavigation",
     "unlimitedStorage",
-    "alarms"
-  ],
-  "optional_permissions": [
+    "alarms",
     "debugger"
   ],
   "host_permissions": ["<all_urls>", "ws://localhost/*", "ws://127.0.0.1/*"],

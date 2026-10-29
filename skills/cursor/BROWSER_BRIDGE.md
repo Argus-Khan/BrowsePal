@@ -34,5 +34,5 @@ node examples/agent-tools.mjs <task-file>.json
 - Prefer `type`/`click` over `eval` on CSP-restricted sites.
 - Use `wait` before reading dynamic content.
 - Save important outputs with `"saveAs": "key"`.
-- Chrome users: grant `debugger` permission for network tools.
+- Chrome users: `debugger` is granted at install (required in MV3); network tools work out of the box.
 - Firefox users: `net.*` CDP methods are unavailable — use `agent.passiveLog` for a request list (status/timing, no bodies).

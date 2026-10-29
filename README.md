@@ -36,7 +36,7 @@ content.js (per page, all frames) ── DOM/eval/local/session/Cache/IndexedDB
    - **Chrome / Chromium:** `chrome://extensions` → enable **Developer mode** → **Load unpacked** → pick `dist/chrome/`.
    - **Firefox:** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…** → pick `dist/firefox/manifest.json`.
 2. Click the extension's **Options** page to set the WebSocket URL (default `ws://localhost:9222`) and an optional shared token.
-   - **Chrome only:** click **Grant debugger (CDP) permission** for `net.*` features.
+   - **Chrome only:** nothing to click — `net.*` needs the `debugger` permission, which MV3 forces to be required, so it is granted at install.
 3. Run the agent side:
 
 ```bash
@@ -128,8 +128,8 @@ net.removeInterceptor {tabId?, id}
 ```
 
 > **Firefox:** `net.*` needs `chrome.debugger`, which Firefox does not have —
-> these methods only work on Chrome/Chromium after granting the `debugger`
-> permission in the options page.
+> these methods only work on Chrome/Chromium, where the `debugger` permission
+> is granted at install (MV3 forbids it being optional).
 >
 > **Firefox fallback:** `agent.passiveLog {limit?, tabId?}` uses `webRequest` and
 > works on both browsers. Every request carries `{ ts, id, tabId, url, method,
@@ -237,7 +237,7 @@ for cross-origin responses without a `Timing-Allow-Origin` header.
 
 | Permission | Reason |
 |---|---|
-| `debugger` (optional, Chrome/Chromium only) | Full CDP-level network + JS-in-frame. Shows an "is being controlled by automated software" bar — expected. Requested from the options page at runtime because Firefox does not have this permission/API. |
+| `debugger` (required on Chrome/Chromium — MV3 forbids it as optional) | Full CDP-level network + JS-in-frame. Shows an "is being controlled by automated software" bar — expected. Absent from the Firefox manifest because Firefox has no chrome.debugger API. |
 | `tabs`, `activeTab`, `scripting` | Enumerate/tab-focus and inject content side helpers. |
 | `webRequest`, `webNavigation` | Passive traffic log + frame enumeration. |
 | `storage` | `chrome.storage` commands + extension settings. |

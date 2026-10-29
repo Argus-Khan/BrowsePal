@@ -126,7 +126,7 @@ node -e "JSON.parse(require('fs').readFileSync('dist/firefox/manifest.json')); c
 3. Click **Load unpacked**.
 4. Select `dist/chrome/`.
 5. Open the extension options, set URL to `ws://localhost:9222`.
-6. Click **Grant debugger (CDP) permission** if you want `net.*` features.
+6. `net.*` works out of the box — the `debugger` permission is required at install (MV3 forbids it as optional).
 7. Run:
    ```bash
    npm run tools examples/list-tabs.json
@@ -214,7 +214,7 @@ cd ../..
 
 Include this in the review notes:
 
-> This extension is a developer tool that exposes browser capabilities to a local AI agent over a WebSocket bound to localhost. All permissions are used exactly as described in the extension description. The debugger permission is optional and only requested at runtime via the options page for users who need CDP network features.
+> This extension is a developer tool that exposes browser capabilities to a local AI agent over a WebSocket bound to localhost. All permissions are used exactly as described in the extension description. The debugger permission is required because Manifest V3 does not allow it to be optional; it provides CDP-level network access (net.*) for the agent and triggers the standard "is being controlled by automated software" bar while active.
 
 Review usually takes 1–3 days.
 
@@ -320,9 +320,7 @@ These skills live in the repo, so they update automatically when users pull.
 
 ### Chrome: `debugger` permission
 
-If `net.*` methods fail, the user did not grant the debugger permission. They must:
-1. Open the extension options.
-2. Click **Grant debugger (CDP) permission**.
+On Chrome the `debugger` permission is required at install, so `net.*` should always work — if it fails, reinstall the extension. On Firefox failure is expected: the manifest omits `debugger` because Firefox has no chrome.debugger API.
 
 ### Firefox: temporary add-on resets on restart
 
