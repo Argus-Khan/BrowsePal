@@ -1517,6 +1517,13 @@
     var type = msg.type;
     var params = msg.params || msg;
 
+    // Background prefixes every low-level method with "ba:" (see protocol.js
+    // MSG). The low-level handlers below are keyed without the prefix, so
+    // normalise: "ba:getText" -> "getText".
+    if (type.indexOf("ba:") === 0 && domOps[type.slice(3)]) {
+      type = type.slice(3);
+    }
+
     // ── New protocol (ba: prefix) ────────────────────────────────────────
     if (type === "ba:snapshot") {
       var maxDepth = params && params.maxDepth;
