@@ -35,6 +35,9 @@ async function build() {
     // Copy lib/ directory
     await cp(join(root, "lib"), libDir, { recursive: true, force: true });
 
+    // Copy extension icons (referenced by manifest icons/default_icon)
+    await cp(join(root, "assets/icons"), join(dir, "assets/icons"), { recursive: true, force: true });
+
     // Write browser-specific manifest
     const manifestSrc = browser === "chrome" ? "manifest.json" : "manifest-firefox.json";
     const manifest = await import(join(root, manifestSrc), { with: { type: "json" } });

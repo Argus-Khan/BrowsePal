@@ -21,6 +21,7 @@
     "options.css",
     "popup.html",
     "popup.js",
+    "assets/icons/",
     "examples/",
     "dist/"
   ],
