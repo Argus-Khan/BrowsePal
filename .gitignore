@@ -1,4 +1,7 @@
-node_modules/
 dist/
-*.log
-.DS_Store
+node_modules/
+.codegraph/
+.opencode/
+.redcon/
+.redcon_cache.json
+.redcon_cache.json.lock
