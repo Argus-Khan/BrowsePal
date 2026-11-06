@@ -12,6 +12,8 @@ A cross-browser (Chromium + Firefox 128+) Manifest V3 extension that exposes the
 
 The extension **cannot be a server** (MV3 background workers can't listen on ports), so it **connects out** to a WebSocket server that the AI agent runs (default `ws://localhost:9222`). The agent pushes JSON-RPC commands; the extension executes them and returns results.
 
+**Several browsers, one relay:** each extension dials the configured port with `?bridge=1`. If that slot is already held, the relay opens the next free port (`9223`, `9224`, …) and redirects the newcomer there — one browser per port, no configuration. Connect the agent to the port for the browser you want; the relay log identifies each (`extension identified: Firefox on port 9223`).
+
 ## Architecture
 
 ```

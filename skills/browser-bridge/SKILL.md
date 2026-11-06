@@ -1,6 +1,6 @@
 ---
 name: browser-bridge
-description: Use to control, read, or interact with web pages, or to test and debug anything that runs in a browser. Two paths in one skill: the browsepal extension drives the user's real browser via JSON-RPC over WebSocket; the chrome-devtools MCP exposes real DevTools panels (network bodies, performance traces, heap snapshots, Lighthouse, accessibility tree) in an isolated Chrome.
+description: "Use to control, read, or interact with web pages, or to test and debug anything that runs in a browser. Two paths in one skill: the browsepal extension drives the user's real browser via JSON-RPC over WebSocket; the chrome-devtools MCP exposes real DevTools panels (network bodies, performance traces, heap snapshots, Lighthouse, accessibility tree) in an isolated Chrome."
 ---
 
 # Browser Bridge Skill
@@ -28,6 +28,12 @@ Two ways to drive a browser. Pick per task:
 > **Port note.** Chrome's remote debugging port is also **9222**, so a toolkit and a
 > debuggable Chrome cannot both hold it. `examples/agent-tools.mjs`, `lib/server.js`
 > and `examples/agent-server.js` all accept `--port N`.
+>
+> **Several browsers, one relay.** The relay sorts them itself: every extension
+> dials with `?bridge=1`; if its slot is taken, the relay redirects it to the next
+> free port (`9223`, `9224`, …). One browser per port — connect the agent to the
+> port you want. The relay log identifies each (`extension identified: Firefox on
+> port 9223`).
 
 ---
 
