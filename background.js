@@ -630,7 +630,9 @@ if (chrome.windows) {
   });
 
   // Track window resize/move — this fires when pop-shell or anything else changes window bounds
-  chrome.windows.onBoundsChanged.addListener((window) => {
+  // ?. — onBoundsChanged is Chrome-only (Firefox: no support); an unguarded
+  // call here throws at module load and aborts start() entirely.
+  chrome.windows.onBoundsChanged?.addListener((window) => {
     console.log(diagTag, "bounds-changed", JSON.stringify({
       id: window.id, type: window.type, state: window.state,
       width: window.width, height: window.height,
