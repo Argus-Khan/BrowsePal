@@ -43,7 +43,7 @@
     "accessibility-tree",
     "action-plans"
   ],
-  "author": "",
+  "author": "Etherpakits LLC",
   "license": "MIT",
   "dependencies": {
     "ws": "^8.18.0"

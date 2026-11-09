@@ -45,7 +45,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "browser-agent@local",
+      "id": "browser-agent@etherpakits.uk",
       "strict_min_version": "128.0"
     }
   },

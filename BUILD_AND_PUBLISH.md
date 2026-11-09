@@ -241,6 +241,7 @@ cd ../..
 5. When asked if source code is needed, choose **No** if you are submitting exactly the built files.
 6. Fill in the listing:
    - Name, description, summary.
+   - Publisher / developer name: **Etherpakits LLC** (also set it on the AMO account profile).
    - Categories: Developer Tools, Search Tools.
    - License: MIT.
    - Privacy policy: link to your repo or a short page.
