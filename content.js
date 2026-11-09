@@ -1620,6 +1620,13 @@
 
     var op = domOps[type];
     if (op) {
+      // Refs come from snapshots; low-level ops address by selector. Resolve
+      // ref → selector here so page.click("eN") works as the SDK advertises.
+      // Unknown refs fall through to the op's own "not found" error.
+      if (msg.ref && !msg.selector) {
+        var refMeta = refMap.get(msg.ref);
+        if (refMeta) msg = Object.assign({}, msg, { selector: refMeta.selector });
+      }
       var result = op(msg);
       if (result && typeof result.then === "function") return result;
       return Promise.resolve(result);
