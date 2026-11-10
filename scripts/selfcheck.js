@@ -194,6 +194,54 @@ check("no docs reference the removed browser-testing-with-devtools skill", () =>
       f + " references browser-testing-with-devtools (merged into browser-bridge, skill removed)");
   }
 });
+console.log("expr dsl");
+check("content.js has no new Function / eval(", () => {
+  const c = read("content.js");
+  must(!/\bnew\s+Function\b/.test(c), "new Function still present");
+  must(!/\beval\s*\(/.test(c), "eval( still present");
+});
+check("whitelist expr DSL evaluates common probes", () => {
+  const c = read("content.js");
+  const start = c.indexOf("// ─── Expr DSL BEGIN");
+  const end = c.indexOf("// ─── Expr DSL END");
+  must(start !== -1 && end !== -1 && end > start, "Expr DSL markers missing in content.js");
+  // Isolate evalExpr so Node can run it without the content-script IIFE.
+  const body = c.slice(start, end).replace(/^\s*\/\/[^\n]*\n/, "");
+  // eslint-disable-next-line no-new-func -- test harness only, not shipped
+  const evalExpr = new Function(body + "\nreturn evalExpr;")();
+  const roots = {
+    document: {
+      title: "Example",
+      body: { className: "x" },
+      querySelector(sel) {
+        if (sel === ".wm-status") return { textContent: "ok" };
+        if (sel.includes("wm-consult")) return { innerText: "doc" };
+        return null;
+      },
+    },
+    window: { WM_CONSULT: { a: 1 }, WM_CONSULT_BOOKING: null },
+    location: { href: "https://example.test/" },
+    navigator: {},
+    Math, JSON, Number, String, Boolean, Array, Object, Date,
+    localStorage: {}, sessionStorage: {}, history: {}, performance: {},
+  };
+  const cases = [
+    ["document.title", "Example"],
+    ["location.href", "https://example.test/"],
+    ["window.WM_CONSULT || window.WM_CONSULT_BOOKING || null", { a: 1 }],
+    ["document.querySelector('.wm-status')?.textContent || ''", "ok"],
+    ["!!document.querySelector('#missing')", false],
+    ["1 + 2", null], // should throw — arithmetic not in DSL
+  ];
+  for (const [expr, expected] of cases.slice(0, 5)) {
+    const got = evalExpr(expr, roots);
+    must(JSON.stringify(got) === JSON.stringify(expected), expr + " => " + JSON.stringify(got));
+  }
+  let threw = false;
+  try { evalExpr("1 + 2", roots); } catch { threw = true; }
+  must(threw, "unsupported arithmetic should throw");
+});
+
 check("documented example task files exist", () => {
   const docs = read("README.md") + read("skills/browser-bridge/SKILL.md");
   const refs = docs.match(/examples\/[\w.-]+\.json/g) || [];

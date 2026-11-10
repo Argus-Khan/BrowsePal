@@ -81,13 +81,15 @@ Request ⇄ response:
 ← {"jsonrpc":"2.0","id":1,"result":"Example"}
 ```
 
+`page.eval` accepts a **whitelist expression** (property access, calls, `?.`, `&&`/`||`, comparisons) — not arbitrary JS / IIFEs.
+
 Notifications (server→agent, no `id`): `net.requestWillBeSent`, `net.responseReceived`, `net.loadingFinished`, `net.requestPaused`, `agent.connected`, `agent.disconnected`, `net.requestLogged`.
 
 > **Tab targeting.** Most page/network/storage/cache/indexedDB calls take a `tabId` to act on the page in that tab. Use `tabs.list` / `tabs.active` to discover it. If `tabId` is omitted on page-level calls, the extension uses the currently active tab.
 
 ### `page.*`
 ```
-page.eval            {tabId?, frameId?, code}                   → value (must serialize)
+page.eval            {tabId?, frameId?, code}                   → value (whitelist expr; must serialize)
 page.getOuterHTML    {tabId?, frameId?}
 page.getText         {tabId?, frameId?, selector?}               // all text in selector (default body)
 page.querySelector   {tabId?, frameId?, selector, attrs?[]}      → {outerHTML, attrs, text, value}

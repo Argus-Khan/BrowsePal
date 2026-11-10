@@ -39,25 +39,16 @@ try {
   console.log("SCREENSHOT_ERR", e.message);
 }
 
-const probe = await rpc("page.eval", {
-  tabId,
-  code: `(() => {
-    const cfg = window.WM_CONSULT || window.WM_CONSULT_BOOKING || null;
-    const scripts = [...document.querySelectorAll('script[src*="clinician"],script[src*="booking"]')].map(s => s.src);
-    const status = document.querySelector('.wm-status')?.textContent || '';
-    const who = document.querySelector('#wm-consult-portal-user, .wm-portal-header')?.innerText || '';
-    return {
-      href: location.href,
-      title: document.title,
-      cfg,
-      scripts,
-      status,
-      who,
-      bodyClass: document.body.className,
-      hasRoot: !!document.querySelector('#wm-consult-clinician-root, #wm-consult-booking-root'),
-    };
-  })()`,
-});
+// page.eval is a whitelist expression DSL (no Function/eval) — one expression per call.
+const probe = {
+  href: await rpc("page.eval", { tabId, code: "location.href" }),
+  title: await rpc("page.eval", { tabId, code: "document.title" }),
+  cfg: await rpc("page.eval", { tabId, code: "window.WM_CONSULT || window.WM_CONSULT_BOOKING || null" }),
+  status: await rpc("page.eval", { tabId, code: "document.querySelector('.wm-status')?.textContent || ''" }),
+  who: await rpc("page.eval", { tabId, code: "document.querySelector('#wm-consult-portal-user, .wm-portal-header')?.innerText || ''" }),
+  bodyClass: await rpc("page.eval", { tabId, code: "document.body.className" }),
+  hasRoot: await rpc("page.eval", { tabId, code: "!!document.querySelector('#wm-consult-clinician-root, #wm-consult-booking-root')" }),
+};
 console.log("\nPROBE", JSON.stringify(probe, null, 2));
 
 close();

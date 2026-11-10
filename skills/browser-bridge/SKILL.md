@@ -106,7 +106,7 @@ Create a JSON file and run it with `node examples/agent-tools.mjs task.json [--p
 
 If the toolkit doesn't cover a need, call these directly over the WebSocket:
 
-- `page.eval`, `page.getText`, `page.querySelector`, `page.querySelectorAll`
+- `page.eval` (whitelist expression only — no IIFEs/arbitrary JS), `page.getText`, `page.querySelector`, `page.querySelectorAll`
 - `page.click`, `page.hover`, `page.focus`, `page.type`, `page.pressKey`
 - `page.setValue`, `page.scroll`, `page.scrollIntoView`, `page.waitFor`
 - `page.screenshot`, `page.navigate`, `page.reload`, `page.frames`

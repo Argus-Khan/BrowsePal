@@ -1,5 +1,3 @@
-import { esc } from "./lib/esc.js";
-
 // ─── Diagnostic: Window Dimension Monitor ─────────────────────────────────
 // Logs window + document dimensions at every lifecycle point to diagnose
 // popup shrink issues (e.g. pop-shell tiling interference).
@@ -112,20 +110,26 @@ async function refresh() {
 
     const list = document.getElementById("excludedList");
     const empty = document.getElementById("emptyHint");
-    list.innerHTML = "";
+    list.replaceChildren();
     if (excluded.length) {
       empty.style.display = "none";
       for (const pattern of excluded) {
         const div = document.createElement("div");
         div.className = "excluded-item";
-        div.innerHTML = `<span>${esc(pattern)}</span><span class="remove" data-pattern="${esc(pattern)}">✕</span>`;
-        div.querySelector(".remove").addEventListener("click", async (e) => {
+        const label = document.createElement("span");
+        label.textContent = pattern;
+        const remove = document.createElement("span");
+        remove.className = "remove";
+        remove.textContent = "✕";
+        remove.dataset.pattern = pattern;
+        remove.addEventListener("click", async (e) => {
           e.stopPropagation();
           const updated = excluded.filter((p) => p !== pattern);
           await chrome.storage.local.set({ excludedUrls: updated });
           chrome.runtime.sendMessage({ jsonrpc: "2.0", method: "agent.config.set", params: { excludedUrls: updated } });
           refresh();
         });
+        div.append(label, remove);
         list.appendChild(div);
       }
     } else {

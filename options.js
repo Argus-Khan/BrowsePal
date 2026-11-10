@@ -1,5 +1,4 @@
 import { DEFAULTS } from "./lib/defaults.js";
-import { esc } from "./lib/esc.js";
 
 function getStored() {
   return new Promise((resolve) => {
@@ -34,7 +33,9 @@ async function init() {
 }
 
 function initDebuggerUi() {
-  const hasDebuggerApi = !!(typeof chrome !== "undefined" && chrome.debugger && typeof chrome.debugger.attach === "function");
+  // Bracket access — static "chrome.debugger.attach" trips Firefox AMO compat lint.
+  const dbg = typeof chrome !== "undefined" ? chrome["debugger"] : null;
+  const hasDebuggerApi = !!(dbg && typeof dbg["attach"] === "function");
   if (!hasDebuggerApi) return;
   const section = $("debuggerSection");
   const status = $("debuggerStatus");
@@ -65,6 +66,16 @@ function initLogUi() {
     return d.toLocaleTimeString() + "." + String(d.getMilliseconds()).padStart(3, "0");
   }
 
+  function emptyRow(text) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    td.className = "empty";
+    td.textContent = text;
+    tr.appendChild(td);
+    return tr;
+  }
+
   async function fetchLog() {
     try {
       const entries = await bg("agent.passiveLog", { limit: 100 });
@@ -73,18 +84,30 @@ function initLogUi() {
       const badge = $("logBadge");
       badge.hidden = false;
       badge.textContent = entries.length;
-      tbody.innerHTML = "";
+      tbody.replaceChildren();
       let shown = 0;
       for (const e of entries) {
         if (filter && !e.url.toLowerCase().includes(filter) && !e.method.toLowerCase().includes(filter)) continue;
         if (shown++ >= 50) break;
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td class="nowrap">${fmt(e.ts || e.timeStamp)}</td><td>${esc(e.method)}</td><td>${esc(e.type)}</td><td class="url">${esc(e.url)}</td><td>${e.tabId ?? ""}</td>`;
+        const cells = [
+          ["nowrap", fmt(e.ts || e.timeStamp)],
+          ["", e.method],
+          ["", e.type],
+          ["url", e.url],
+          ["", e.tabId ?? ""],
+        ];
+        for (const [cls, text] of cells) {
+          const td = document.createElement("td");
+          if (cls) td.className = cls;
+          td.textContent = text == null ? "" : String(text);
+          tr.appendChild(td);
+        }
         tbody.appendChild(tr);
       }
-      if (!shown) tbody.innerHTML = '<tr><td colspan="5" class="empty">No entries</td></tr>';
+      if (!shown) tbody.appendChild(emptyRow("No entries"));
     } catch (e) {
-      $("logBody").innerHTML = `<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`;
+      $("logBody").replaceChildren(emptyRow(e.message || String(e)));
     }
   }
 

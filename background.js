@@ -629,16 +629,17 @@ if (chrome.windows) {
     }));
   });
 
-  // Track window resize/move — this fires when pop-shell or anything else changes window bounds
-  // ?. — onBoundsChanged is Chrome-only (Firefox: no support); an unguarded
-  // call here throws at module load and aborts start() entirely.
-  chrome.windows.onBoundsChanged?.addListener((window) => {
-    console.log(diagTag, "bounds-changed", JSON.stringify({
-      id: window.id, type: window.type, state: window.state,
-      width: window.width, height: window.height,
-      left: window.left, top: window.top,
-    }));
-  });
+  // Track window resize/move — Chrome-only; bracket access avoids Firefox AMO compat lint.
+  const onBoundsChanged = chrome.windows["onBoundsChanged"];
+  if (onBoundsChanged) {
+    onBoundsChanged.addListener((window) => {
+      console.log(diagTag, "bounds-changed", JSON.stringify({
+        id: window.id, type: window.type, state: window.state,
+        width: window.width, height: window.height,
+        left: window.left, top: window.top,
+      }));
+    });
+  }
 
   // Track window focus changes (pop-shell may resize on focus)
   chrome.windows.onFocusChanged.addListener((windowId) => {

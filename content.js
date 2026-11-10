@@ -45,6 +45,304 @@
     catch (e) { return String(value); }
   }
 
+  // ─── Expr DSL BEGIN ─────────────────────────────────────────────────────
+  // Whitelisted expression evaluator (no Function/eval). Supports:
+  //   literals, identifiers, ., ?., [], calls, !, !!, &&, ||, comparisons,
+  //   typeof, parentheses, arrays, object literals.
+  // Roots: document, window, location, navigator, Math, JSON, Number, String,
+  // Boolean, Array, Object, Date, localStorage, sessionStorage, history,
+  // performance, undefined, NaN, Infinity, true/false/null.
+  function evalExpr(code, roots) {
+    if (typeof code !== "string") throw new Error("code must be a string");
+    var src = code.replace(/^\uFEFF/, "").trim();
+    if (!src) throw new Error("empty expression");
+    if (src.charAt(src.length - 1) === ";") src = src.slice(0, -1).trim();
+    var i = 0;
+    function peek() { return src.charAt(i); }
+    function next() { return src.charAt(i++); }
+    function skip() {
+      while (i < src.length) {
+        var c = peek();
+        if (c === " " || c === "\t" || c === "\n" || c === "\r") { i++; continue; }
+        if (c === "/" && src.charAt(i + 1) === "/") {
+          i += 2;
+          while (i < src.length && peek() !== "\n") i++;
+          continue;
+        }
+        break;
+      }
+    }
+    function match(s) {
+      skip();
+      if (src.slice(i, i + s.length) === s) { i += s.length; return true; }
+      return false;
+    }
+    function expect(s) {
+      if (!match(s)) throw new Error("expected '" + s + "' at " + i);
+    }
+    function isIdentStart(c) {
+      return (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "_" || c === "$";
+    }
+    function isIdent(c) {
+      return isIdentStart(c) || (c >= "0" && c <= "9");
+    }
+    function parseIdent() {
+      skip();
+      if (!isIdentStart(peek())) throw new Error("expected identifier at " + i);
+      var start = i;
+      i++;
+      while (isIdent(peek())) i++;
+      return src.slice(start, i);
+    }
+    function parseString() {
+      skip();
+      var q = next();
+      if (q !== "\"" && q !== "'") throw new Error("expected string at " + (i - 1));
+      var out = "";
+      while (i < src.length) {
+        var c = next();
+        if (c === q) return out;
+        if (c === "\\") {
+          var e = next();
+          if (e === "n") out += "\n";
+          else if (e === "t") out += "\t";
+          else if (e === "r") out += "\r";
+          else out += e;
+        } else out += c;
+      }
+      throw new Error("unterminated string");
+    }
+    function parseNumber() {
+      skip();
+      var start = i;
+      if (peek() === ".") { /* fraction only */ }
+      else if (peek() < "0" || peek() > "9") throw new Error("expected number at " + i);
+      while (peek() >= "0" && peek() <= "9") i++;
+      if (peek() === ".") {
+        i++;
+        while (peek() >= "0" && peek() <= "9") i++;
+      }
+      if (peek() === "e" || peek() === "E") {
+        i++;
+        if (peek() === "+" || peek() === "-") i++;
+        while (peek() >= "0" && peek() <= "9") i++;
+      }
+      return Number(src.slice(start, i));
+    }
+    function parseArgs() {
+      var args = [];
+      skip();
+      if (peek() === ")") return args;
+      for (;;) {
+        args.push(parseOr());
+        if (!match(",")) break;
+      }
+      return args;
+    }
+    function parsePrimary() {
+      skip();
+      if (match("(")) {
+        var v = parseOr();
+        expect(")");
+        return v;
+      }
+      if (match("[")) {
+        var arr = [];
+        skip();
+        if (!match("]")) {
+          for (;;) {
+            arr.push(parseOr());
+            if (!match(",")) break;
+          }
+          expect("]");
+        }
+        return arr;
+      }
+      if (match("{")) {
+        var obj = {};
+        skip();
+        if (!match("}")) {
+          for (;;) {
+            skip();
+            var key;
+            if (peek() === "\"" || peek() === "'") key = parseString();
+            else key = parseIdent();
+            expect(":");
+            obj[key] = parseOr();
+            if (!match(",")) break;
+          }
+          expect("}");
+        }
+        return obj;
+      }
+      if (peek() === "\"" || peek() === "'") return parseString();
+      if ((peek() >= "0" && peek() <= "9") || (peek() === "." && src.charAt(i + 1) >= "0" && src.charAt(i + 1) <= "9"))
+        return parseNumber();
+      if (isIdentStart(peek())) {
+        var id = parseIdent();
+        if (id === "true") return true;
+        if (id === "false") return false;
+        if (id === "null") return null;
+        if (id === "undefined") return undefined;
+        if (id === "NaN") return NaN;
+        if (id === "Infinity") return Infinity;
+        if (!Object.prototype.hasOwnProperty.call(roots, id))
+          throw new Error("unknown identifier: " + id);
+        return roots[id];
+      }
+      throw new Error("unexpected token at " + i + ": '" + peek() + "'");
+    }
+    function callValue(fn, thisArg, args) {
+      if (typeof fn !== "function") throw new Error("not a function");
+      return fn.apply(thisArg, args);
+    }
+    function parsePostfix() {
+      var val = parsePrimary();
+      for (;;) {
+        skip();
+        if (match("?\.")) {
+          if (match("[")) {
+            var k1 = parseOr();
+            expect("]");
+            val = (val == null) ? undefined : val[k1];
+            continue;
+          }
+          if (match("(")) {
+            var a1 = parseArgs();
+            expect(")");
+            val = (val == null) ? undefined : callValue(val, undefined, a1);
+            continue;
+          }
+          var p1 = parseIdent();
+          skip();
+          if (match("(")) {
+            var a2 = parseArgs();
+            expect(")");
+            val = (val == null) ? undefined : callValue(val[p1], val, a2);
+          } else {
+            val = (val == null) ? undefined : val[p1];
+          }
+          continue;
+        }
+        if (match(".")) {
+          var prop = parseIdent();
+          skip();
+          if (match("(")) {
+            var a3 = parseArgs();
+            expect(")");
+            val = callValue(val[prop], val, a3);
+          } else {
+            val = val == null ? val : val[prop];
+          }
+          continue;
+        }
+        if (match("[")) {
+          var k2 = parseOr();
+          expect("]");
+          val = val == null ? val : val[k2];
+          continue;
+        }
+        if (match("(")) {
+          var a4 = parseArgs();
+          expect(")");
+          val = callValue(val, undefined, a4);
+          continue;
+        }
+        break;
+      }
+      return val;
+    }
+    function parseUnaryReal() {
+      skip();
+      var start = i;
+      if (isIdentStart(peek())) {
+        var kw = parseIdent();
+        if (kw === "typeof") {
+          skip();
+          return typeof parseUnaryReal();
+        }
+        i = start;
+      }
+      if (match("!!")) return !!parseUnaryReal();
+      if (match("!")) return !parseUnaryReal();
+      if (match("+")) return +parseUnaryReal();
+      if (match("-")) return -parseUnaryReal();
+      return parsePostfix();
+    }
+    function parseCompare() {
+      var left = parseUnaryReal();
+      for (;;) {
+        skip();
+        var op =
+          match("===") ? "===" :
+          match("!==") ? "!==" :
+          match("==") ? "==" :
+          match("!=") ? "!=" :
+          match("<=") ? "<=" :
+          match(">=") ? ">=" :
+          match("<") ? "<" :
+          match(">") ? ">" : null;
+        if (!op) break;
+        var right = parseUnaryReal();
+        if (op === "===") left = left === right;
+        else if (op === "!==") left = left !== right;
+        else if (op === "==") left = left == right;
+        else if (op === "!=") left = left != right;
+        else if (op === "<=") left = left <= right;
+        else if (op === ">=") left = left >= right;
+        else if (op === "<") left = left < right;
+        else left = left > right;
+      }
+      return left;
+    }
+    function parseAnd() {
+      var left = parseCompare();
+      while (match("&&")) {
+        var right = parseCompare();
+        left = left && right;
+      }
+      return left;
+    }
+    function parseOr() {
+      var left = parseAnd();
+      while (match("||")) {
+        var right = parseAnd();
+        left = left || right;
+      }
+      return left;
+    }
+    var result = parseOr();
+    skip();
+    if (i < src.length) throw new Error("unexpected trailing input: '" + src.slice(i) + "'");
+    return result;
+  }
+  // ─── Expr DSL END ───────────────────────────────────────────────────────
+
+  function pageRoots() {
+    return {
+      document: document,
+      window: window,
+      location: location,
+      navigator: navigator,
+      Math: Math,
+      JSON: JSON,
+      Number: Number,
+      String: String,
+      Boolean: Boolean,
+      Array: Array,
+      Object: Object,
+      Date: Date,
+      localStorage: localStorage,
+      sessionStorage: sessionStorage,
+      history: history,
+      performance: performance,
+    };
+  }
+
+  function runExpr(code) {
+    return serialize(evalExpr(code, pageRoots()));
+  }
+
   /** Legacy node descriptor for backward-compatible domOps responses. */
   function describeNode(el, depth) {
     if (depth === undefined) depth = 3;
@@ -695,24 +993,9 @@
   function _actEval(action, step) {
     if (!action.code) return Promise.resolve({ step: step, ok: false, err: "code required" });
     try {
-      return (new Function("return (async () => { return (" + action.code + "); })();"))().then(
-        function (result) { return { step: step, ok: true, value: serialize(result) }; },
-        function () {
-          try {
-            var result = (new Function("return (" + action.code + ");"))();
-            return { step: step, ok: true, value: serialize(result) };
-          } catch (e2) {
-            return { step: step, ok: false, err: e2.message };
-          }
-        }
-      );
+      return Promise.resolve({ step: step, ok: true, value: runExpr(action.code) });
     } catch (e) {
-      try {
-        var result2 = (new Function("return (" + action.code + ");"))();
-        return Promise.resolve({ step: step, ok: true, value: serialize(result2) });
-      } catch (e2) {
-        return Promise.resolve({ step: step, ok: false, err: e2.message });
-      }
+      return Promise.resolve({ step: step, ok: false, err: e.message || String(e) });
     }
   }
 
@@ -961,26 +1244,9 @@
 
   var domOps = {
     eval: function (msg) {
-      try {
-        return (new Function("return (async () => { return (" + msg.code + "); })();"))().then(
-          function (r) { return ok(serialize(r)); },
-          function () {
-            try {
-              var r2 = (new Function(msg.code))();
-              return ok(serialize(r2));
-            } catch (e2) {
-              return err(e2.message);
-            }
-          }
-        );
-      } catch (e) {
-        try {
-          var r3 = (new Function(msg.code))();
-          return Promise.resolve(ok(serialize(r3)));
-        } catch (e2) {
-          return Promise.resolve(err(e2.message));
-        }
-      }
+      if (!msg || !msg.code) return Promise.resolve(err("code required"));
+      try { return Promise.resolve(ok(runExpr(msg.code))); }
+      catch (e) { return Promise.resolve(err(e.message || String(e))); }
     },
 
     getOuterHTML: function () { return ok(document.documentElement.outerHTML); },
@@ -1543,26 +1809,8 @@
     // ── Low-level DOM operations via ba: prefix ──────────────────────────
     if (type === "ba:eval") {
       if (!params || !params.code) return Promise.resolve(err("code required"));
-      try {
-        return (new Function("return (async () => { return (" + params.code + "); })();"))().then(
-          function (r) { return ok(serialize(r)); },
-          function () {
-            try {
-              var r2 = (new Function(params.code))();
-              return ok(serialize(r2));
-            } catch (e2) {
-              return err(e2.message);
-            }
-          }
-        );
-      } catch (e) {
-        try {
-          var r3 = (new Function(params.code))();
-          return Promise.resolve(ok(serialize(r3)));
-        } catch (e2) {
-          return Promise.resolve(err(e2.message));
-        }
-      }
+      try { return Promise.resolve(ok(runExpr(params.code))); }
+      catch (e) { return Promise.resolve(err(e.message || String(e))); }
     }
     if (type === "ba:click") {
       if (!params || !params.selector) return Promise.resolve(err("selector required"));
