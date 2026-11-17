@@ -11,10 +11,11 @@
  * examples/console-perf.json for the smoke test.
  */
 import { readFileSync, existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import WebSocket from "ws";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (f) => readFileSync(join(root, f), "utf8");
@@ -247,6 +248,169 @@ check("documented example task files exist", () => {
   const refs = docs.match(/examples\/[\w.-]+\.json/g) || [];
   must(refs.length, "no example task files referenced");
   for (const r of [...new Set(refs)]) must(existsSync(join(root, r)), "referenced but missing: " + r);
+});
+
+// ─── 6. Relay sticky-cid behavior (live sockets) ─────────────────────────────
+
+console.log("relay sticky cid");
+
+async function checkAsync(name, fn) {
+  try {
+    await fn();
+    console.log("  ok   " + name);
+  } catch (e) {
+    failures++;
+    console.log("  FAIL " + name + "\n       " + (e && e.message));
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function connectWs(url, ms = 4000) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    // Buffer every message from the start: a bridge.redirect can land
+    // between the open event and a caller attaching its listener.
+    ws._buf = [];
+    ws.on("message", (d) => ws._buf.push(String(d)));
+    const t = setTimeout(() => { try { ws.close(); } catch {} reject(new Error("connect timeout: " + url)); }, ms);
+    ws.on("open", () => { clearTimeout(t); resolve(ws); });
+    ws.on("error", (e) => { clearTimeout(t); reject(new Error("connect failed: " + url + " (" + e.message + ")")); });
+  });
+}
+
+function expectMessage(ws, pred, ms = 4000, label = "message") {
+  return new Promise((resolve, reject) => {
+    const take = (raw) => {
+      let m;
+      try { m = JSON.parse(String(raw)); } catch { return null; }
+      return pred(m) ? m : null;
+    };
+    // Check messages that arrived before this call.
+    const buf = ws._buf || [];
+    for (let i = 0; i < buf.length; i++) {
+      const m = take(buf[i]);
+      if (m) { buf.splice(i, 1); return resolve(m); }
+    }
+    const t = setTimeout(() => { ws.off("message", on); reject(new Error("expected " + label + " not received")); }, ms);
+    const on = (d) => {
+      const m = take(d);
+      if (m) {
+        clearTimeout(t);
+        ws.off("message", on);
+        const at = (ws._buf || []).indexOf(String(d));
+        if (at !== -1) ws._buf.splice(at, 1);
+        resolve(m);
+      }
+    };
+    ws.on("message", on);
+  });
+}
+
+function waitClose(ws, ms = 4000) {
+  return new Promise((resolve, reject) => {
+    if (ws.readyState === 3) return resolve();
+    const t = setTimeout(() => reject(new Error("socket did not close")), ms);
+    ws.on("close", () => { clearTimeout(t); resolve(); });
+  });
+}
+
+/** Reply to every rpc request with a tag, so a round trip proves the pairing. */
+function echoAs(ws, tag) {
+  ws.on("message", (d) => {
+    let m;
+    try { m = JSON.parse(String(d)); } catch { return; }
+    if (m && m.id != null && m.method) {
+      try { ws.send(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: tag })); } catch {}
+    }
+  });
+}
+
+async function rpcThrough(ws, tag, ms = 4000) {
+  const id = Math.floor(Math.random() * 1e9);
+  const p = expectMessage(ws, (m) => m.id === id, ms, "rpc response for " + tag);
+  ws.send(JSON.stringify({ jsonrpc: "2.0", id, method: "ping", params: {} }));
+  const m = await p;
+  if (m.error) throw new Error("rpc error: " + m.error.message);
+  must(m.result === tag, "expected " + tag + " got " + JSON.stringify(m.result));
+}
+
+function redirectPort(m) {
+  must(m && m.method === "bridge.redirect" && m.params && m.params.url, "no bridge.redirect received");
+  return new URL(m.params.url).port;
+}
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.once("error", reject);
+    s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => resolve(p)); });
+  });
+}
+
+await checkAsync("in-place reclaim and sticky port assignment", async () => {
+  const base = await freePort();
+  const proc = spawn(process.execPath, [join(root, "lib/server.js"), "--port", String(base)], { stdio: "ignore" });
+  const socks = [];
+  const open = async (url) => {
+    let last;
+    for (let i = 0; i < 20; i++) {
+      try { const w = await connectWs(url, 1000); socks.push(w); return w; }
+      catch (e) { last = e; await sleep(250); }
+    }
+    throw last;
+  };
+  try {
+    // ── A: same cid reclaiming its slot replaces the stale socket in place ──
+    const ext1 = await open(`ws://127.0.0.1:${base}/?bridge=1&cid=bp-test`);
+    echoAs(ext1, "A1");
+    await sleep(100);
+    const agent1 = await open(`ws://127.0.0.1:${base}/`);
+    await rpcThrough(agent1, "A1");
+
+    const ext2 = await open(`ws://127.0.0.1:${base}/?bridge=1&cid=bp-test`);
+    echoAs(ext2, "A2");
+    await waitClose(ext1); // the relay closed the stale socket, not us
+    must(ext2.readyState === 1, "reclaiming socket was closed (displaced instead)");
+    await rpcThrough(agent1, "A2");
+
+    agent1.close();
+    ext2.close();
+    await sleep(400);
+
+    // ── B: assignment sticks across disconnects ─────────────────────────────
+    const sq = await open(`ws://127.0.0.1:${base}/`); // squatter claims base
+    await sleep(100);
+
+    const decoy = await open(`ws://127.0.0.1:${base}/?bridge=1&cid=bp-decoy`);
+    const dPort = redirectPort(await expectMessage(decoy, (m) => m.method === "bridge.redirect", 4000, "decoy redirect"));
+    must(dPort !== String(base), "decoy should be displaced off base");
+    const decoy2 = await open(`ws://127.0.0.1:${dPort}/?bridge=1&cid=bp-decoy`);
+    echoAs(decoy2, "D");
+
+    const x1 = await open(`ws://127.0.0.1:${base}/?bridge=1&cid=bp-sticky`);
+    const x1Port = redirectPort(await expectMessage(x1, (m) => m.method === "bridge.redirect", 4000, "x1 redirect"));
+    must(x1Port !== dPort && x1Port !== String(base), "x1 should land past the squatters");
+    const x1b = await open(`ws://127.0.0.1:${x1Port}/?bridge=1&cid=bp-sticky`);
+    echoAs(x1b, "X1");
+
+    // Free the slot BELOW the assigned one — a non-sticky relay would hand
+    // it out next; a sticky one must return us to x1Port.
+    decoy2.close();
+    x1b.close();
+    await sleep(400);
+
+    const x2 = await open(`ws://127.0.0.1:${base}/?bridge=1&cid=bp-sticky`);
+    const x2Port = redirectPort(await expectMessage(x2, (m) => m.method === "bridge.redirect", 4000, "x2 redirect"));
+    must(x2Port === x1Port, "sticky assignment broken: got " + x2Port + ", assigned " + x1Port);
+    const x2b = await open(`ws://127.0.0.1:${x2Port}/?bridge=1&cid=bp-sticky`);
+    echoAs(x2b, "X2");
+    const agent2 = await open(`ws://127.0.0.1:${x2Port}/`);
+    await rpcThrough(agent2, "X2");
+  } finally {
+    for (const s of socks) { try { s.close(); } catch {} }
+    try { proc.kill(); } catch {}
+  }
 });
 
 console.log(failures ? `\n${failures} check(s) failed` : "\nall checks passed");

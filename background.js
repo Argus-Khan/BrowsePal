@@ -341,7 +341,9 @@ rpc.registerAll({
 
   "agent.status": () => ({
     connected: !!transport.ready,
-    url: cfg.url || `ws://${cfg.host || "127.0.0.1"}:${cfg.port || 9222}`,
+    // Live url: the relay's assigned port after a bridge.redirect, not the
+    // configured one — otherwise the UI reports 9222 while we sit on 9223.
+    url: (transport && transport.url) || cfg.url || `ws://${cfg.host || "127.0.0.1"}:${cfg.port || 9222}`,
     attachedTabs: [...cdp.attached],
     passiveLogSize: passiveLog.length,
     allowRead: cfg.allowRead,
