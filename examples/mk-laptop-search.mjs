@@ -1,0 +1,341 @@
+// MK laptop search: RTX 2060+ (or comparable AMD, no xx50) <= 800 EUR in North Macedonia.
+// Drives Firefox via the BrowsePal relay (PORT env, default 9223).
+// URL contracts (verified 2026-11-17):
+//   Reklama5: /Search?q=<term>&cat=582&page=N   (53 ads/page, price in MKD or EUR)
+//   Pazar3:   /oglasi/elektronika/kompjuteri-komplet/laptopi-notebook/prodazba/q-<term>?Search=<term>&Page=N
+//             (50 ads/page, JSON-LD ItemList with price/priceCurrency/url)
+import WebSocket from "ws";
+
+const PORT = Number(process.env.PORT || 9223);
+const MKD_PER_EUR = 61.5045;
+const MAX_PAGES = 8; // safety cap per search
+
+function connect(port) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  let id = 1;
+  const pending = new Map();
+  ws.on("message", (raw) => {
+    const msg = JSON.parse(String(raw));
+    if (msg.id != null && pending.has(msg.id)) {
+      const { resolve, reject, t } = pending.get(msg.id);
+      clearTimeout(t);
+      pending.delete(msg.id);
+      if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+      else resolve(msg.result);
+    }
+  });
+  const rpc = (method, params = {}, timeoutMs = 45000) =>
+    new Promise((resolve, reject) => {
+      const my = id++;
+      const t = setTimeout(() => {
+        pending.delete(my);
+        reject(new Error(`timeout ${method}`));
+      }, timeoutMs);
+      pending.set(my, { resolve, reject, t });
+      ws.send(JSON.stringify({ jsonrpc: "2.0", id: my, method, params }));
+    });
+  return new Promise((resolve, reject) => {
+    ws.on("open", () => resolve({ ws, rpc }));
+    ws.on("error", reject);
+  });
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function decodeEntities(s) {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+}
+
+function stripTags(s) { return decodeEntities(s.replace(/<[^>]*>/g, " ")); }
+
+// ── parsers ────────────────────────────────────────────────────────────────
+
+function parseR5(html) {
+  const ads = [];
+  const parts = html.split('<h3><a href="/AdDetails');
+  for (const chunk of parts.slice(1)) {
+    const m = /\?ad=(\d+)" class="SearchAdTitle">([\s\S]*?)<\/a>/.exec(chunk);
+    if (!m) continue;
+    const desc = /class="searchAdDesc">([\s\S]*?)<\/p>/.exec(chunk);
+    const price = /class="search-ad-price">\s*([\d.,]+)\s*([^\s<]*)/.exec(chunk);
+    const city = /class="city-span"[\s\S]*?<\/i>([\s\S]*?)<\/span>/.exec(chunk);
+    const cur = price ? price[2] : "";
+    const raw = price ? Number(price[1].replace(/\./g, "").replace(",", ".")) : 0;
+    let eur = 0, curTag = cur;
+    if (raw) {
+      if (/МКД|MKD|ден/i.test(cur) || !/€|EUR/i.test(cur)) { eur = raw / MKD_PER_EUR; curTag = cur || "MKD"; }
+      else { eur = raw; curTag = "EUR"; }
+    }
+    ads.push({
+      site: "reklama5",
+      id: m[1],
+      title: stripTags(m[2]),
+      desc: desc ? stripTags(desc[1]) : "",
+      priceEur: eur,
+      currency: curTag,
+      location: city ? stripTags(city[1]) : "",
+      url: `https://www.reklama5.mk/AdDetails?ad=${m[1]}`,
+    });
+  }
+  return ads;
+}
+
+function parseP3(html) {
+  const ads = [];
+  const m = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html);
+  if (!m) return ads;
+  let graph;
+  try { graph = JSON.parse(m[1])["@graph"]; } catch { return ads; }
+  for (const node of graph || []) {
+    if (node["@type"] !== "ItemList") continue;
+    for (const li of node.itemListElement || []) {
+      const p = li.item || {};
+      const o = p.offers || {};
+      const price = Number(o.price) || 0;
+      const cur = o.priceCurrency || "";
+      const eur = !price ? 0 : cur === "MKD" ? price / MKD_PER_EUR : price;
+      const loc = /\/prodazba\/([^/]+)\/([^/]+)\//.exec(p.url || "");
+      ads.push({
+        site: "pazar3",
+        id: (p.url || "").split("/").pop(),
+        title: p.name || "",
+        desc: "",
+        priceEur: eur,
+        currency: cur,
+        location: loc ? `${loc[1]}, ${loc[2]}` : "",
+        url: p.url || "",
+      });
+    }
+  }
+  return ads;
+}
+
+// ── GPU + laptop classification ────────────────────────────────────────────
+
+function gpuInfo(text) {
+  const t = text.toUpperCase();
+  let m = /RTX[\s\-–]*([0-9]{4})/.exec(t);
+  if (m) {
+    const n = Number(m[1]);
+    const last = n % 100;
+    const series = Math.floor(n / 100);
+    if (series >= 20 && last >= 60) return { ok: true, gpu: `RTX ${n}` };
+    return { ok: false, gpu: `RTX ${n}`, why: "xx50-tier or below 2060" };
+  }
+  m = /RX[\s\-–]*([0-9]{4})M?/.exec(t);
+  if (m) {
+    const n = Number(m[1]);
+    const series = Math.floor(n / 1000);
+    const min = series === 5 ? 5600 : series === 6 ? 6600 : series === 7 ? 7600 : series === 8 ? 8600 : 0;
+    if (min && n >= min) return { ok: true, gpu: `RX ${n}` };
+    if (min) return { ok: false, gpu: `RX ${n}`, why: "below 6600-class" };
+    return { ok: false, gpu: `RX ${n}`, why: "unsupported series" };
+  }
+  if (/GTX[\s\-–]*[0-9]{4}/.test(t)) return { ok: false, gpu: (t.match(/GTX[\s\-–]*[0-9]{4}/) || [])[0], why: "GTX, below RTX 2060 class" };
+  return { ok: false, gpu: "", why: "no GPU in listing text" };
+}
+
+function isLaptopAd(title) {
+  return !/\b(DESKTOP|MONITOR|GRAFI[CK]A|KONFIGURACIJ|CASE|POWER SUPPLY|TASTATURA|MIŠ|MOUSE|SSD|RAM)\b/i.test(title);
+}
+
+// ── driver ─────────────────────────────────────────────────────────────────
+
+const R5 = "https://www.reklama5.mk/Search?cat=582&q=";
+const P3 = "https://www.pazar3.mk/oglasi/elektronika/kompjuteri-komplet/laptopi-notebook/prodazba/q-";
+const SEARCHES = [
+  { url: (t) => `${R5}${t}`, page: (u, n) => `${u}&page=${n}`, parse: parseR5 },
+  { url: (t) => `${P3}${t}?Search=${t}`, page: (u, n) => `${u}&Page=${n}`, parse: parseP3 },
+];
+const TERMS = ["rtx", "gaming", "rx", "radeon"];
+
+// ── start: join Firefox's room as an AGENT, never as the bridge ─────────────
+// A plain `/` connect to an EMPTY room claims the bridge slot (legacy
+// behavior in lib/server.js) — that would squat Firefox's port, block it,
+// and mute our own requests. So discover a LIVE Firefox bridge from the
+// relay log first, then confirm from the log that we joined as an agent.
+const fs = await import("node:fs");
+const RELAY_LOG = process.env.RELAY_LOG || "";
+
+function readLog() { try { return fs.readFileSync(RELAY_LOG, "utf8"); } catch { return ""; } }
+
+function liveFirefoxPort() {
+  if (!RELAY_LOG) return PORT;
+  const log = readLog();
+  const lines = log.split("\n").filter((l) => l.includes("identified: Firefox on port"));
+  if (!lines.length) return null;
+  const last = lines[lines.length - 1];
+  const port = Number(/port (\d+)/.exec(last)[1]);
+  const after = log.slice(log.lastIndexOf(last) + last.length);
+  if (after.includes(`extension disconnected from port ${port}`)) return null;
+  return port;
+}
+
+let session = null;
+for (let attempt = 0; attempt < 30 && !session; attempt++) {
+  const port = liveFirefoxPort();
+  if (port == null) { console.log(`wait ${attempt}: no live Firefox bridge`); await sleep(5000); continue; }
+  const t0 = new Date().toISOString();
+  const s = await connect(port);
+  await sleep(1200); // let the relay log the join
+  const tail = readLog();
+  const mine = tail.split("\n").filter((l) => l.includes(`on port ${port}`) && l >= t0);
+  if (mine.some((l) => l.includes("extension connected"))) {
+    console.log(`lost race: squatted empty room ${port}, backing off`);
+    try { s.ws.close(); } catch {}
+    await sleep(4000);
+    continue;
+  }
+  if (mine.some((l) => l.includes("agent connected"))) {
+    session = s;
+    console.log(`joined port ${port} as agent`);
+  } else {
+    console.log(`join unverified (attempt ${attempt}, t0=${t0}, log lines seen: ${mine.length}, log bytes: ${tail.length})`);
+    s.ws.close();
+    await sleep(2000);
+  }
+}
+if (!session) { console.error("could not join a live Firefox bridge"); process.exit(1); }
+
+const { ws, rpc } = session;
+
+// Firefox's MV3 background is an event page: idle ~30s → suspended → socket
+// closed with 1001, alarm reconnect ~90s later. Constant traffic keeps it up.
+let pingBusy = false;
+const keepalive = setInterval(() => {
+  if (pingBusy) return;
+  pingBusy = true;
+  rpc("agent.status", {}, 8000).catch(() => {}).finally(() => { pingBusy = false; });
+}, 5000);
+
+async function retry(fn, tries, gapMs, label) {
+  let err;
+  for (let i = 0; i < tries; i++) {
+    try { return await fn(); } catch (e) { err = e; console.log(`${label} retry ${i}: ${e.message}`); await sleep(gapMs); }
+  }
+  throw err;
+}
+
+await retry(() => rpc("agent.status", {}, 8000), 12, 5000, "status");
+console.log("status OK");
+
+const tab = await retry(() => rpc("tabs.create", { url: "https://www.reklama5.mk/", active: false }, 15000), 4, 4000, "tabs.create");
+const tabId = tab.id ?? tab.tabId ?? tab;
+console.log("tab", tabId);
+await sleep(4000);
+
+// page.eval without frameId is broadcast to every frame and the first
+// responder wins — sub-frames (R5's header <embed>s, Pazar3's GSI iframe)
+// routinely beat the top frame, which is what looked like "tab hijacking".
+// Pin all reads to the tab's top frame explicitly.
+let FRAME = null;
+try {
+  const frames = await rpc("page.frames", { tabId }, 15000);
+  const top = (frames || []).find((f) => f.parentFrameId === -1);
+  FRAME = top ? top.frameId : null; // null → fall back to broadcast
+} catch (e) { console.log("page.frames failed:", e.message); }
+console.log("top frame", FRAME);
+const ev = (code) =>
+  rpc("page.eval", FRAME == null ? { tabId, code } : { tabId, frameId: FRAME, code }, 15000);
+
+async function fetchHtml(url) {
+  let err;
+  for (let i = 0; i < 10; i++) {
+    try {
+      await rpc("page.navigate", { tabId, url }, 15000);
+      await sleep(3500);
+      // Sanity check we're on the requested URL before extracting.
+      const loc = await ev("location.href");
+      if (loc !== url) { err = new Error(`wrong document → ${loc}`); console.log(`  fetch try ${i}: ${err.message}`); await sleep(2000); continue; }
+      const html = await ev("document.documentElement.outerHTML");
+      if (html && html.length > 5000) return html;
+      err = new Error("short html " + (html || "").length);
+      console.log(`  fetch try ${i}: ${err.message}`);
+    } catch (e) { err = e; console.log(`  fetch try ${i}: ${e.message}`); }
+    await sleep(3000);
+  }
+  throw err;
+}
+
+const all = [];
+const seen = new Set();
+for (const site of SEARCHES) {
+  for (const term of TERMS) {
+    const base = site.url(term);
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const url = site.page(base, page);
+      let ads;
+      try {
+        const html = await fetchHtml(url);
+        ads = site.parse(html);
+      } catch (e) {
+        console.log("FAIL", url, "->", e.message);
+        break;
+      }
+      console.log(`${url} -> ${ads.length} ads`);
+      if (!ads.length) break; // last page reached
+      let fresh = 0;
+      for (const a of ads) {
+        const key = a.url || a.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        all.push(a);
+        fresh++;
+      }
+      if (!fresh) break; // no new ads → no further pages
+    }
+  }
+}
+console.log(`\ncollected ${all.length} unique ads`);
+
+// ── filter + report ────────────────────────────────────────────────────────
+
+const kept = [];
+for (const a of all) {
+  if (!isLaptopAd(a.title)) { a.rej = "laptop"; continue; }
+  if (!a.priceEur) { a.rej = "noprice"; continue; }
+  if (a.priceEur > 800) { a.rej = "price"; continue; }
+  const g = gpuInfo(`${a.title} ${a.desc}`);
+  if (!g.ok) { a.rej = "gpu"; continue; }
+  a.rej = null;
+  a.gpu = g.gpu;
+  kept.push(a);
+}
+
+// Second pass: price-qualifying ads whose listing text never names a GPU
+// (Pazar3's JSON-LD has title only) — open the detail page and look there.
+const unknowns = all.filter((a) => a.rej === "gpu");
+console.log(`detail-checking ${unknowns.length} price-qualifying ads for GPU info…`);
+let checked = 0;
+for (const a of unknowns) {
+  if (checked++ >= 90) break;
+  try {
+    const html = await fetchHtml(a.url);
+    const g = gpuInfo(`${a.title} ${a.desc} ${stripTags(html)}`);
+    if (g.ok) { a.rej = null; a.gpu = g.gpu; kept.push(a); }
+  } catch (e) { console.log(`  detail fail: ${e.message}`); }
+}
+kept.sort((x, y) => x.priceEur - y.priceEur);
+
+const summary = { price: 0, noprice: 0, gpu: 0, laptop: 0 };
+for (const a of all) if (a.rej) summary[a.rej]++;
+const lines = [];
+lines.push(`MATCHES: ${kept.length}  (scanned ${all.length} unique ads)`);
+lines.push(`rejected: >800€ ${summary.price} | no/negotiable price ${summary.noprice} | GPU not qualifying ${summary.gpu} | not a laptop ${summary.laptop}\n`);
+kept.forEach((a, i) => {
+  lines.push(
+    `${String(i + 1).padStart(2)}. ${a.title}\n` +
+    `    ${a.priceEur.toFixed(0)} EUR (${a.currency}) | GPU: ${a.gpu} | ${a.location} | ${a.site}\n` +
+    `    ${a.url}`
+  );
+});
+const out = lines.join("\n");
+console.log(out);
+fs.writeFileSync("/tmp/opencode/mk-laptop-results.txt", out + "\n");
+clearInterval(keepalive);
+ws.close();

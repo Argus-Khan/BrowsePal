@@ -28,6 +28,10 @@ const passiveLog = [];
 const passiveById = new Map();
 
 let transport;
+// Set at module load (line ~668). Popup/options RPCs must wait for it:
+// on an event-page wake, start() is still awaiting loadConfig when their
+// message arrives, and handlers dereference an as-yet-undefined transport.
+let startPromise = null;
 let cfg = { ...DEFAULTS };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -336,11 +340,11 @@ rpc.registerAll({
 
   "ping": () => ({
     pong: Date.now(),
-    connected: !!transport.ready,
+    connected: !!(transport && transport.ready),
   }),
 
   "agent.status": () => ({
-    connected: !!transport.ready,
+    connected: !!(transport && transport.ready),
     // Live url: the relay's assigned port after a bridge.redirect, not the
     // configured one — otherwise the UI reports 9222 while we sit on 9223.
     url: (transport && transport.url) || cfg.url || `ws://${cfg.host || "127.0.0.1"}:${cfg.port || 9222}`,
@@ -370,7 +374,7 @@ rpc.registerAll({
       delete patch.excludedUrls;
     }
     await saveConfig(patch);
-    transport.reopen(wsCfg(patch));
+    if (transport) transport.reopen(wsCfg(patch));
     cfg = await loadConfig();
     if (cfg.autoReconnect === undefined) cfg.autoReconnect = true;
     return { ok: true, ...cfg };
@@ -378,7 +382,7 @@ rpc.registerAll({
 
   "agent.reconnect": () => {
     if (transport) transport.connect();
-    return { connected: !!transport.ready, url: cfg.url || `ws://${cfg.host || "127.0.0.1"}:${cfg.port || 9222}` };
+    return { connected: !!(transport && transport.ready), url: cfg.url || `ws://${cfg.host || "127.0.0.1"}:${cfg.port || 9222}` };
   },
 
   "agent.detachAll": async () => {
@@ -432,7 +436,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendObj: (o) => { try { sendResponse(o); } catch (e) {} },
     ready: true,
   };
-  rpc.handle(msg, shim);
+  // Wait for start() so handlers see an initialized transport (fresh eval of
+  // the event page: listener is registered before start() runs).
+  const go = () => rpc.handle(msg, shim);
+  if (startPromise) startPromise.then(go, go);
+  else go();
   return true; // keep sendResponse channel open for async RPC
 });
 
@@ -665,4 +673,4 @@ if (chrome.windows) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
-start().catch((e) => console.error("[bridge] start() FAILED:", e && e.stack || e));
+startPromise = start().catch((e) => console.error("[bridge] start() FAILED:", e && e.stack || e));
