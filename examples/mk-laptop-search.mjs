@@ -294,7 +294,10 @@ async function fetchHtml(url) {
       }
       // Sanity check we're on the requested URL before extracting.
       const loc = await ev("location.href");
-      if (loc !== url) { err = new Error(`wrong document → ${loc}`); console.log(`  fetch try ${i}: ${err.message}`); await sleep(2000); continue; }
+      // Pazar3 301s some JSON-LD URLs to a canonical form (duplicated city
+      // segment) — same ad when the trailing numeric path id matches.
+      const tailId = (u) => { const t = (u.split("?")[0].split("/").pop()) || ""; return /^\d+$/.test(t) ? t : null; };
+      if (loc !== url && !(tailId(loc) && tailId(loc) === tailId(url))) { err = new Error(`wrong document → ${loc}`); console.log(`  fetch try ${i}: ${err.message}`); await sleep(2000); continue; }
       const html = await ev("document.documentElement.outerHTML");
       if (html && html.length > 5000) return html;
       err = new Error("short html " + (html || "").length);
