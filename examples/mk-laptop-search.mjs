@@ -101,6 +101,10 @@ function parseP3(html) {
       const cur = o.priceCurrency || "";
       const eur = !price ? 0 : cur === "MKD" ? price / MKD_PER_EUR : price;
       const loc = /\/prodazba\/([^/]+)\/([^/]+)\//.exec(p.url || "");
+      // media.pazar3.mk/Image/<uuid>/<YYYYMMDD>/… — image upload date, used as
+      // a free "definitely old" signal so old ads skip their detail fetch.
+      const im = Array.isArray(p.image) ? p.image[0] : p.image;
+      const md = im && /\/Image\/[^/]+\/(\d{4})(\d{2})(\d{2})\//.exec(im);
       ads.push({
         site: "pazar3",
         id: (p.url || "").split("/").pop(),
@@ -108,6 +112,7 @@ function parseP3(html) {
         desc: "",
         priceEur: eur,
         currency: cur,
+        imgDate: md ? `${md[1]}-${md[2]}-${md[3]}` : null,
         location: loc ? `${loc[1]}, ${loc[2]}` : "",
         url: p.url || "",
       });
@@ -273,8 +278,20 @@ async function fetchHtml(url) {
   let err;
   for (let i = 0; i < 10; i++) {
     try {
+      const prev = await ev("location.href").catch(() => "");
       await rpc("page.navigate", { tabId, url }, 15000);
-      await sleep(3500);
+      // Adaptive wait with commit detection: until the new navigation commits,
+      // evals still answer from the PREVIOUS document — poll until location
+      // changes (or already equals the target), then until DOMContentLoaded.
+      const t0 = Date.now();
+      for (;;) {
+        await sleep(400);
+        try {
+          const l = await ev("location.href");
+          if ((l === url || l !== prev) && (await ev("document.readyState")) !== "loading") break;
+        } catch { /* navigating / content script not injected yet */ }
+        if (Date.now() - t0 > 6000) break;
+      }
       // Sanity check we're on the requested URL before extracting.
       const loc = await ev("location.href");
       if (loc !== url) { err = new Error(`wrong document → ${loc}`); console.log(`  fetch try ${i}: ${err.message}`); await sleep(2000); continue; }
@@ -337,9 +354,14 @@ for (const a of all) {
 }
 
 console.log(`detail-checking ${candidates.length} price-qualifying ads (date + GPU)…`);
-let checked = 0;
+let checked = 0, skippedOld = 0;
 for (const a of candidates) {
   if (checked++ >= 500) break;
+  // Pazar3's image URL carries the upload date — a free "definitely old"
+  // signal from the listing. Skip the detail fetch for those (a brand-new ad
+  // reusing a photo uploaded before Oct would be skipped too — rare, accepted).
+  if (a.imgDate && a.imgDate < MIN_DATE) { a.date = a.imgDate; skippedOld++; continue; }
+  if (checked % 10 === 0) console.log(`  detail ${checked}/${candidates.length}`);
   try {
     const html = await fetchHtml(a.url);
     a.date = detailDate(a.site, html);
@@ -350,12 +372,13 @@ for (const a of candidates) {
   } catch (e) { console.log(`  detail fail: ${e.message}`); }
 }
 
-// Phase 2: GPU + recency. Ads whose date could not be parsed are kept but
-// flagged with "?" rather than guessed out.
+// Phase 2: recency first (known-old ads are dropped regardless of GPU), then
+// GPU. Ads whose date could not be parsed are kept but flagged "?" rather
+// than guessed out.
 const kept = [];
 for (const a of candidates) {
-  if (!a.gpu) { a.rej = "gpu"; continue; }
   if (a.date && a.date < MIN_DATE) { a.rej = "date"; continue; }
+  if (!a.gpu) { a.rej = "gpu"; continue; }
   a.rej = null;
   kept.push(a);
 }
@@ -364,7 +387,7 @@ kept.sort((x, y) => x.priceEur - y.priceEur);
 const summary = { price: 0, noprice: 0, gpu: 0, laptop: 0, date: 0 };
 for (const a of all) if (a.rej) summary[a.rej]++;
 const lines = [];
-lines.push(`MATCHES: ${kept.length}  (scanned ${all.length} unique ads, posted on/after ${MIN_DATE})`);
+lines.push(`MATCHES: ${kept.length}  (scanned ${all.length} unique ads, posted on/after ${MIN_DATE}; ${skippedOld} old Pazar3 ads skipped via image date)`);
 lines.push(`rejected: >800€ ${summary.price} | no/negotiable price ${summary.noprice} | GPU not qualifying ${summary.gpu} | older than ${MIN_DATE} ${summary.date} | not a laptop ${summary.laptop}\n`);
 kept.forEach((a, i) => {
   lines.push(
